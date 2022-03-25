@@ -7,6 +7,8 @@ from lektor.reporter import reporter
 from lektor.sourceobj import SourceObject, VirtualSourceObject
 from lektor.types.flow import Flow, FlowType
 from lektor.utils import bool_from_string, build_url, prune_file_and_folder
+# for quick config
+from lektor.utils import slugify
 
 from typing import \
     NewType, NamedTuple, Tuple, Dict, Set, List, Optional, Iterator, Callable
@@ -47,8 +49,9 @@ class GroupProducer(NamedTuple):
     attribute: AttributeKey
     func: GroupingCallback
     flatten: bool = True
-    template: Optional[str] = None
     slug: Optional[str] = None
+    template: Optional[str] = None
+    dependency: Optional[str] = None
 
 
 class GroupComponent(NamedTuple):
@@ -84,14 +87,16 @@ class GroupBySource(VirtualSourceObject):
         attribute: AttributeKey,
         group: GroupKey,
         children: List[GroupComponent] = [],
+        slug: Optional[str] = None,  # default: "{attrib}/{group}/index.html"
         template: Optional[str] = None,  # default: "groupby-attribute.html"
-        slug: Optional[str] = None  # default: "{attrib}/{group}/index.html"
+        dependency: Optional[str] = None
     ):
         super().__init__(record)
         self.attribute = attribute
         self.group = group
         self.children = children
         self.template = template or 'groupby-{}.html'.format(self.attribute)
+        self.dependency = dependency
         # custom user path
         slug = slug or '{attrib}/{group}/index.html'
         slug = slug.replace('{attrib}', self.attribute)
@@ -110,6 +115,8 @@ class GroupBySource(VirtualSourceObject):
         return build_url([self.record.path, self.slug])
 
     def iter_source_filenames(self) -> Iterator[str]:
+        if self.dependency:
+            yield self.dependency
         for record, _ in self.children:
             yield from record.iter_source_filenames()
 
@@ -194,6 +201,7 @@ class GroupByCreator:
         self._models: Dict[AttributeKey, Dict[str, Dict[str, str]]] = {}
         self._func: Dict[str, Set[GroupProducer]] = {}
         self._resolve_map: Dict[str, UrlResolverConf] = {}  # only for server
+        self._watched_once: Set[GroupingCallback] = set()
 
     # --------------
     #   Initialize
@@ -243,8 +251,9 @@ class GroupByCreator:
         root: str,
         attrib: AttributeKey, *,
         flatten: bool = True,  # if False, dont explode FlowType
+        slug: Optional[str] = None,  # default: "{attrib}/{group}/index.html"
         template: Optional[str] = None,  # default: "groupby-attrib.html"
-        slug: Optional[str] = None  # default: "{attrib}/{group}/index.html"
+        dependency: Optional[str] = None
     ) -> Callable[[GroupingCallback], None]:
         '''
         Decorator to subscribe to attrib-elements. Converter for groupby().
@@ -256,13 +265,29 @@ class GroupByCreator:
         template: "groupby-attrib.html"
         slug: "{attrib}/{group}/index.html"
         '''
+        root = root.rstrip('/') + '/'
+
         def _decorator(fn: GroupingCallback):
             if root not in self._func:
                 self._func[root] = set()
             self._func[root].add(
-                GroupProducer(attrib, fn, flatten, template, slug))
+                GroupProducer(attrib, fn, flatten, template, slug, dependency))
 
         return _decorator
+
+    def watch_once(self, *args, **kwarg) -> Callable[[GroupingCallback], None]:
+        ''' Same as watch() but listener is auto removed after build. '''
+        def _decorator(fn: GroupingCallback):
+            self._watched_once.add(fn)
+            self.watch(*args, **kwarg)(fn)
+        return _decorator
+
+    def remove_watch_once(self) -> None:
+        ''' Remove all watch-once listeners. '''
+        for k, v in self._func.items():
+            not_once = {x for x in v if x.func not in self._watched_once}
+            self._func[k] = not_once
+        self._watched_once.clear()
 
     # ----------
     #   Helper
@@ -346,11 +371,11 @@ class GroupByCreator:
     def make_cluster(self, root: lektor.db.Record) -> Iterator[GroupBySource]:
         ''' Group by attrib and build Artifacts. '''
         assert isinstance(root, lektor.db.Record)
-        for attrib, fn, flat, temp, slug in self._func.get(root.url_path, []):
-            groups = self.groupby(attrib, root, func=fn, flatten=flat)
+        for attr, fn, fl, temp, slug, dep in self._func.get(root.url_path, []):
+            groups = self.groupby(attr, root, func=fn, flatten=fl)
             for group_key, children in groups.items():
-                obj = GroupBySource(root, attrib, group_key, children,
-                                    template=temp, slug=slug)
+                obj = GroupBySource(root, attr, group_key, children,
+                                    template=temp, slug=slug, dependency=dep)
                 self.track_dev_server_path(obj)
                 yield obj
 
@@ -365,7 +390,7 @@ class GroupByCreator:
         if len(pieces) >= 2:
             attrib: AttributeKey = pieces[0]  # type: ignore[assignment]
             group: GroupKey = pieces[1]  # type: ignore[assignment]
-            for attr, _, _, _, slug in self._func.get(node.url_path, []):
+            for attr, _, _, _, slug, _ in self._func.get(node.url_path, []):
                 if attr == attrib:
                     # TODO: do we need to provide the template too?
                     return GroupBySource(node, attr, group, slug=slug)
@@ -420,9 +445,34 @@ class GroupByPlugin(Plugin):
             if self.creator.should_process(node):
                 yield from self.creator.make_cluster(node)
 
+    def _quick_config(self):
+        config = self.get_config()
+        for attrib in config.sections():
+            sect = config.section_as_dict(attrib)
+            root = sect.get('root', '/')
+            slug = sect.get('slug')
+            temp = sect.get('template')
+            split = sect.get('split')
+
+            @self.creator.watch_once(root, attrib, template=temp, slug=slug,
+                                     dependency=self.config_filename)
+            def _fn(args):
+                val = args.field
+                if isinstance(val, str):
+                    val = val.split(split) if split else [val]  # make list
+                if isinstance(val, list):
+                    for tag in val:
+                        yield slugify(tag), tag
+
     def on_before_build_all(self, builder, **extra):
+        # load config file quick listeners (before initialize!)
+        self._quick_config()
         # parse all models to detect attribs of listeners
         self.creator.initialize(builder.pad.db)
+
+    def on_after_build_all(self, builder, **extra):
+        # remove all quick listeners (will be added again in the next build)
+        self.creator.remove_watch_once()
 
     def on_after_prune(self, builder, **extra):
         # TODO: find better way to prune unreferenced elements

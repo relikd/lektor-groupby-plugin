@@ -1,9 +1,14 @@
-# Lektor Plugin: @groupby
+# Lektor Plugin: groupby
 
-A generic grouping / clustering plugin. Can be used for tagging and similar tasks.
+A generic grouping / clustering plugin. Can be used for tagging or similar tasks.
+
+Overview:
+- the [basic example](#usage-basic-example) goes into detail how this plugin works.
+- the [quick config](#usage-quick-config) example show how you can use the plugin config to setup a quick and easy tagging system.
+- the [complex example](#usage-a-slightly-more-complex-example) touches on the potential of what is possible.
 
 
-## Usage: Simple Example
+## Usage: Basic example
 
 Lets start with a simple example: adding a tags field to your model.
 Assuming you have a `blog-entry.ini` that is used for all children of `/blog` path.
@@ -107,7 +112,36 @@ This is: <GroupBySource attribute="myvar" group="latest-news" template="myvar.ht
 ```
 
 
+## Usage: Quick config
+
+The whole example above can be simplified with a plugin config:
+
+#### `configs/groupby.ini`
+
+```ini
+[myvar]
+root = /blog/
+slug = tag/{group}/index.html
+template = myvar.html
+split = ' '
+```
+
+You still need to add a separate attribute to your model (step 1), but anything else is handled by the config file.
+All of these fields are optional and fallback to the default values stated above.
+
+The newly introduced option `split` will be used as string delimiter.
+This allows to have a field with `string` type instead of `strings` type.
+If you do not provide the `split` option, the whole field value will be used as group key.
+Note: split is only used on str fields (`string` type), not lists (`strings` type).
+
+The emitted `extra-info` for the child is the original key value.
+E.g., `Latest News,Awesome` with `split = ,` yields `('latest-news', 'Latest News')` and `('awesome', 'Awesome')`.
+
+
 ## Usage: A slightly more complex example
+
+There are situations though, where a simple config file is not enough.
+The following plugin will find all model fields with attribute `inlinetags` and search for in-text occurrences of `{{Tagname}}` etc.
 
 ```python
 from lektor.markdown import Markdown
@@ -129,7 +163,6 @@ def on_groupby_init(self, groupby, **extra):
                     yield slugify(tag), tag
 ```
 
-This will find all model fields with attribute `inlinetags` and search for in-text occurrences of `{{Tagname}}`, etc.
 This generic approach does not care what data-type the field value is:
 `strings` fields will be expanded and enumerated, Markdown will be unpacked.
 You can combine this mere tag-detector with text-replacements to point to the actual tags-page.
