@@ -59,12 +59,6 @@ class GroupComponent(NamedTuple):
     extra: object
 
 
-class UrlResolverConf(NamedTuple):
-    attribute: AttributeKey
-    group: GroupKey
-    slug: Optional[str] = None
-
-
 # -----------------------------------
 #            Actual logic
 # -----------------------------------
@@ -200,7 +194,7 @@ class GroupByCreator:
         self._flows: Dict[AttributeKey, Dict[str, Set[str]]] = {}
         self._models: Dict[AttributeKey, Dict[str, Dict[str, str]]] = {}
         self._func: Dict[str, Set[GroupProducer]] = {}
-        self._resolve_map: Dict[str, UrlResolverConf] = {}  # only for server
+        self._resolve_map: Dict[str, GroupBySource] = {}  # only for server
         self._watched_once: Set[GroupingCallback] = set()
 
     # --------------
@@ -398,18 +392,13 @@ class GroupByCreator:
 
     def track_dev_server_path(self, sender: GroupBySource) -> None:
         ''' Dev server only: Add target path to reverse artifact url lookup '''
-        self._resolve_map[sender.url_path] = \
-            UrlResolverConf(sender.attribute, sender.group, sender.slug)
+        self._resolve_map[sender.url_path] = sender
 
     def resolve_dev_server_path(
         self, node: SourceObject, pieces: List[str]
     ) -> Optional[GroupBySource]:
         ''' Dev server only: Resolve actual url to virtual obj. '''
-        prev = self._resolve_map.get(build_url([node.url_path] + pieces))
-        if prev:
-            attrib, group, slug = prev
-            return GroupBySource(node, attrib, group, slug=slug)
-        return None
+        return self._resolve_map.get(build_url([node.url_path] + pieces))
 
 
 # -----------------------------------
@@ -425,7 +414,7 @@ class GroupByPlugin(Plugin):
         self.creator = GroupByCreator()
         self.env.add_build_program(GroupBySource, GroupByBuildProgram)
         # let other plugins register their @groupby.watch functions
-        self.emit('init', groupby=self.creator)
+        self.emit('init', groupby=self.creator, **extra)
 
         # resolve /tag/rss/ -> /tag/rss/index.html (local server only)
         @self.env.urlresolver
@@ -440,10 +429,10 @@ class GroupByPlugin(Plugin):
                 return self.creator.resolve_virtual_path(node, pieces)
 
         # injection to generate GroupBy nodes when processing artifacts
-        @self.env.generator
-        def groupby_generator(node):
-            if self.creator.should_process(node):
-                yield from self.creator.make_cluster(node)
+        # @self.env.generator
+        # def groupby_generator(node):
+        #     if self.creator.should_process(node):
+        #         yield from self.creator.make_cluster(node)
 
     def _quick_config(self):
         config = self.get_config()
@@ -465,10 +454,20 @@ class GroupByPlugin(Plugin):
                         yield slugify(tag), tag
 
     def on_before_build_all(self, builder, **extra):
+        # let other plugins register their @groupby.watch_once functions
+        self.emit('init-once', groupby=self.creator, builder=builder, **extra)
         # load config file quick listeners (before initialize!)
         self._quick_config()
         # parse all models to detect attribs of listeners
         self.creator.initialize(builder.pad.db)
+
+    def on_before_build(self, builder, build_state, source, prog, **extra):
+        # Injection to create GroupBy nodes before parent node is built.
+        # Use this callback (not @generator) to modify parent beforehand.
+        # Relevant for the root page which is otherwise build before GroupBy.
+        if self.creator.should_process(source):
+            for vobj in self.creator.make_cluster(source):
+                builder.build(vobj)
 
     def on_after_build_all(self, builder, **extra):
         # remove all quick listeners (will be added again in the next build)
