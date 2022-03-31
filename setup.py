@@ -1,11 +1,7 @@
 from setuptools import setup
-import re
 
 with open('README.md') as fp:
     longdesc = fp.read()
-    # replace fragment links with bold text
-    frag_links = re.compile(r'\[([^]]+)\]\(#[^)]*\)')
-    longdesc = frag_links.sub(lambda x: '__{}__'.format(x.group(1)), longdesc)
 
 setup(
     name='lektor-groupby',
@@ -17,7 +13,7 @@ setup(
     },
     author='relikd',
     url='https://github.com/relikd/lektor-groupby-plugin',
-    version='0.9',
+    version='0.9.1',
     description='Cluster arbitrary records with field attribute keyword.',
     long_description=longdesc,
     long_description_content_type="text/markdown",
