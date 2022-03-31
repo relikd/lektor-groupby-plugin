@@ -1,0 +1,9 @@
+title: Hello Website
+---
+body: This is an example blog post. {{Tag}} in {{blog}}
+---
+tags:
+
+Initial
+Blog Post
+samegroup

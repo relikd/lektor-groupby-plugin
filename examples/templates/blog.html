@@ -1,0 +1,6 @@
+{% extends "page.html" %}
+{% block body %}
+  {% for child in this.children %}
+    <a href="{{child|url}}">{{ child.title }}</a>
+  {% endfor %}
+{% endblock %}

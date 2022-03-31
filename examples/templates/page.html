@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>{% block title %}Welcome{% endblock %}</title>
+<style type="text/css">
+header, footer { padding: 1em; background: #DDD; }
+main { margin: 3em; }
+</style>
+<body>
+  <header>
+    <div>Nav: &nbsp;
+      <a href="{{ '/'|url }}">Root</a> &nbsp;
+      <a href="{{ '/blog'|url }}">Blog</a> &nbsp;
+      <a href="{{ '/projects'|url }}">Projects</a>
+    </div>
+  </header>
+  <main>
+    <h2>{{ this.title }}</h2>
+    {% block body %}{{ this.body }}{% endblock %}
+  </main>
+  <footer>
+    <div>Simple Tags:
+      {% for tag in ['blog','directory','blog-post','initial','samegroup'] %}
+      <a href="/blog/simple/{{tag}}/">({{tag}})</a>
+      {% endfor %}
+    </div>
+    <div>Config Tags:
+      {% for tag in ['root','blog','directory','blog-post','initial','samegroup'] %}
+      <a href="/config/{{tag}}.html">({{tag}})</a>
+      {% endfor %}
+    </div>
+    <div>Advanced Tags:
+      {% for tag in ['tag','two','blog'] %}
+      <a href="/advanced/{{tag}}/">({{tag}})</a>
+      {% endfor %}
+    </div>
+  </footer>
+</body>

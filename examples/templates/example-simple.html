@@ -1,0 +1,12 @@
+<h2>Path: {{ this | url(absolute=True) }}</h2>
+<div>This is: {{this}}</div>
+<ul>
+	{%- for child, extras in this.children.items() %}
+	<li>Page: {{ child.path }}</li>
+	<ul>
+		{%- for extra in extras %}
+		Name: {{ extra.val }}, Tag count: {{ extra.tags_in_page }}
+		{%- endfor %}
+	</ul>
+	{%- endfor %}
+</ul>
