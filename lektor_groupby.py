@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-from lektor.db import Database, Record  # typing
 from lektor.build_programs import BuildProgram
 from lektor.builder import Artifact, Builder  # typing
+from lektor.constants import PRIMARY_ALT
+from lektor.db import Database, Record  # typing
 from lektor.pluginsystem import Plugin
 from lektor.reporter import reporter
 from lektor.sourceobj import SourceObject, VirtualSourceObject
@@ -24,6 +25,7 @@ GroupKey = NewType('GroupKey', str)  # key of group-by
 
 
 class ResolverConf(NamedTuple):
+    path: str
     attrib: AttributeKey
     group: GroupKey
     slug: str
@@ -93,6 +95,13 @@ class GroupBySource(VirtualSourceObject):
     def url_path(self) -> str:
         # Actual path to resource as seen by the browser
         return build_url([self.record.path, self.slug])
+
+    def __getitem__(self, name: str) -> object:
+        if name == '_path':
+            return self.path
+        elif name == '_alt':
+            return PRIMARY_ALT
+        return None
 
     def iter_source_filenames(self) -> Iterator[str]:
         ''' Enumerate all dependencies '''
@@ -418,7 +427,8 @@ class GroupByCreator:
         ''' Create virtual objects and build sources. '''
         for url, x in sorted(self._results.items()):
             builder.build(x)
-            self._resolve_map[url] = ResolverConf(x.attrib, x.group, x.slug)
+            self._resolve_map[url] = ResolverConf(
+                x.record['_path'], x.attrib, x.group, x.slug)
         self._results.clear()
 
     # -----------------
@@ -436,6 +446,17 @@ class GroupByCreator:
             return None
         return GroupBySource(node, conf.attrib, conf.group, slug=conf.slug)
 
+    def resolve_virtual_path(
+        self, node: SourceObject, pieces: List[str]
+    ) -> Optional[GroupBySource]:
+        if isinstance(node, Record) and len(pieces) >= 2:
+            test_node = (node['_path'], pieces[0], pieces[1])
+            for url, conf in self._resolve_map.items():
+                if test_node == conf[:3]:
+                    _, attr, group, slug = conf
+                    return GroupBySource(node, attr, group, slug=slug)
+        return None
+
 
 # -----------------------------------
 #           Plugin Entry
@@ -452,8 +473,12 @@ class GroupByPlugin(Plugin):
 
         # resolve /tag/rss/ -> /tag/rss/index.html (local server only)
         @self.env.urlresolver
-        def _(node: SourceObject, parts: List[str]) -> Optional[GroupBySource]:
+        def a(node: SourceObject, parts: List[str]) -> Optional[GroupBySource]:
             return self.creator.resolve_dev_server_path(node, parts)
+
+        @self.env.virtualpathresolver(VPATH.lstrip('@'))
+        def b(node: SourceObject, parts: List[str]) -> Optional[GroupBySource]:
+            return self.creator.resolve_virtual_path(node, parts)
 
     def _load_quick_config(self) -> None:
         ''' Load config file quick listeners. '''
