@@ -232,7 +232,7 @@ class GroupByState:
 
     def __contains__(self, record: Record) -> bool:
         ''' Returns True if record was already processed. '''
-        return record in self._processed
+        return record.path in self._processed
 
     def items(self) -> Iterable[Tuple[GroupKey, Dict]]:
         ''' Iterable with (GroupKey, {record: extras}) tuples. '''
@@ -240,8 +240,8 @@ class GroupByState:
 
     def add(self, record: Record, group: Dict[GroupKey, List]) -> None:
         ''' Append groups if not processed already. '''
-        if record not in self._processed:
-            self._processed.add(record)
+        if record.path not in self._processed:
+            self._processed.add(record.path)
             for group_key, extras in group.items():
                 if group_key in self.state:
                     self.state[group_key][record] = extras
