@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
 from lektor.build_programs import BuildProgram
-from lektor.builder import Artifact, Builder  # typing
-from lektor.constants import PRIMARY_ALT
+from lektor.builder import Artifact, Builder, PathCache  # typing
+from lektor.context import get_ctx
 from lektor.db import Database, Record  # typing
-from lektor.pluginsystem import Plugin
-from lektor.reporter import reporter
+from lektor.environment import Expression
+from lektor.pluginsystem import Plugin, IniFile
+from lektor.reporter import reporter, style
 from lektor.sourceobj import SourceObject, VirtualSourceObject
 from lektor.types.flow import Flow, FlowType
 from lektor.utils import bool_from_string, build_url, prune_file_and_folder
 # for quick config
 from lektor.utils import slugify
 
-from typing import Tuple, Dict, Set, List, NamedTuple
-from typing import NewType, Optional, Iterator, Callable, Iterable
+from typing import Tuple, Dict, Set, List, Union, Any, NamedTuple
+from typing import NewType, Optional, Iterable, Callable, Iterator, Generator
+from weakref import WeakSet
 
 VPATH = '@groupby'  # potentially unsafe. All matching entries are pruned.
 
@@ -20,15 +22,8 @@ VPATH = '@groupby'  # potentially unsafe. All matching entries are pruned.
 # -----------------------------------
 #            Typing
 # -----------------------------------
-AttributeKey = NewType('AttributeKey', str)  # attribute of lektor model
+SelectionKey = NewType('SelectionKey', str)  # attribute of lektor model
 GroupKey = NewType('GroupKey', str)  # key of group-by
-
-
-class ResolverConf(NamedTuple):
-    path: str
-    attrib: AttributeKey
-    group: GroupKey
-    slug: str
 
 
 class FieldKeyPath(NamedTuple):
@@ -43,8 +38,88 @@ class GroupByCallbackArgs(NamedTuple):
     field: object  # lektor model data-field value
 
 
-GroupingCallback = Callable[[GroupByCallbackArgs],
-                            Iterator[Tuple[GroupKey, object]]]
+GroupByCallbackYield = Union[GroupKey, Tuple[GroupKey, object]]
+
+GroupingCallback = Callable[[GroupByCallbackArgs], Union[
+    Iterator[GroupByCallbackYield],
+    Generator[GroupByCallbackYield, Optional[str], None],
+]]
+
+
+# -----------------------------------
+#               Config
+# -----------------------------------
+
+
+class GroupByConfig:
+    '''
+    Holds information for GroupByWatcher and GroupBySource.
+    This object is accessible in your template file ({{this.config}}).
+
+    Available attributes:
+    key, root, slug, template, enabled, dependencies, fields, key_map
+    '''
+
+    def __init__(
+        self,
+        key: SelectionKey, *,
+        root: Optional[str] = None,  # default: "/"
+        slug: Optional[str] = None,  # default: "{attr}/{group}/index.html"
+        template: Optional[str] = None,  # default: "groupby-{attr}.html"
+    ) -> None:
+        self.key = key
+        self.root = (root or '/').rstrip('/') + '/'
+        self.slug = slug or f'"{key}/" ~ this.key ~ "/"'  # this: GroupBySource
+        self.template = template or f'groupby-{self.key}.html'
+        # editable after init
+        self.enabled = True
+        self.dependencies = set()  # type: Set[str]
+        self.fields = {}  # type: Dict[str, str]
+        self.key_map = {}  # type: Dict[str, str]
+
+    def slugify(self, k: str) -> str:
+        ''' key_map replace and slugify. '''
+        return slugify(self.key_map.get(k, k))  # type: ignore[no-any-return]
+
+    def set_fields(self, fields: Optional[Dict[str, str]]) -> None:
+        '''
+        The fields dict is a mapping of attrib = Expression values.
+        Each dict key will be added to the GroupBySource virtual object.
+        Each dict value is passed through jinja context first.
+        '''
+        self.fields = fields or {}
+
+    def set_key_map(self, key_map: Optional[Dict[str, str]]) -> None:
+        ''' This mapping replaces group keys before slugify. '''
+        self.key_map = key_map or {}
+
+    def __repr__(self) -> str:
+        txt = '<GroupByConfig'
+        for x in ['key', 'root', 'slug', 'template', 'dependencies']:
+            txt += ' {}="{}"'.format(x, getattr(self, x))
+        txt += f' fields="{", ".join(self.fields)}"'
+        return txt + '>'
+
+    @staticmethod
+    def from_dict(key: SelectionKey, cfg: Dict[str, str]) -> 'GroupByConfig':
+        ''' Set config fields manually. Only: key, root, slug, template. '''
+        return GroupByConfig(
+            key=key,
+            root=cfg.get('root'),
+            slug=cfg.get('slug'),
+            template=cfg.get('template'),
+        )
+
+    @staticmethod
+    def from_ini(key: SelectionKey, ini: IniFile) -> 'GroupByConfig':
+        ''' Read and parse ini file. Also adds dependency tracking. '''
+        cfg = ini.section_as_dict(key)  # type: Dict[str, str]
+        conf = GroupByConfig.from_dict(key, cfg)
+        conf.enabled = ini.get_bool(key + '.enabled', True)
+        conf.dependencies.add(ini.filename)
+        conf.set_fields(ini.section_as_dict(key + '.fields'))
+        conf.set_key_map(ini.section_as_dict(key + '.key_map'))
+        return conf
 
 
 # -----------------------------------
@@ -56,65 +131,140 @@ class GroupBySource(VirtualSourceObject):
     '''
     Holds information for a single group/cluster.
     This object is accessible in your template file.
-    Attributes: record, attrib, group, slug, template, children
-
-    :DEFAULTS:
-    slug: "{attrib}/{group}/index.html"
-    template: "groupby-attribute.html"
+    Attributes: record, key, group, slug, children, config
     '''
 
     def __init__(
         self,
         record: Record,
-        attrib: AttributeKey,
-        group: GroupKey, *,
-        slug: Optional[str] = None,  # default: "{attrib}/{group}/index.html"
-        template: Optional[str] = None  # default: "groupby-attrib.html"
+        group: GroupKey,
+        config: GroupByConfig,
+        children: Optional[Dict[Record, List[object]]] = None,
     ) -> None:
         super().__init__(record)
-        self.attrib = attrib
+        self.key = config.slugify(group)
         self.group = group
-        self.template = template or 'groupby-{}.html'.format(self.attrib)
-        # custom user path
-        slug = slug or '{attrib}/{group}/index.html'
-        slug = slug.replace('{attrib}', self.attrib)
-        slug = slug.replace('{group}', self.group)
-        if slug.endswith('/index.html'):
-            slug = slug[:-10]
-        self.slug = slug
-        # user adjustable after init
-        self.children = {}  # type: Dict[Record, List[object]]
-        self.dependencies = set()  # type: Set[str]
+        self.config = config
+        # make sure children are on the same pad
+        self._children = {}  # type: Dict[Record, List[object]]
+        for child, extras in (children or {}).items():
+            if child.pad != record.pad:
+                child = record.pad.get(child.path)
+            self._children[child] = extras
+        self._reverse_reference_records()
+        # evaluate slug Expression
+        self.slug = self._eval(config.slug, field='slug')  # type: str
+        assert self.slug != Ellipsis, 'invalid config: ' + config.slug
+        if self.slug and self.slug.endswith('/index.html'):
+            self.slug = self.slug[:-10]
+        # extra fields
+        for attr, expr in config.fields.items():
+            setattr(self, attr, self._eval(expr, field='fields.' + attr))
+
+    def _eval(self, value: str, *, field: str) -> Any:
+        ''' Internal only: evaluates Lektor config file field expression. '''
+        pad = self.record.pad
+        alt = self.record.alt
+        try:
+            return Expression(pad.env, value).evaluate(pad, this=self, alt=alt)
+        except Exception as e:
+            report_config_error(self.config.key, field, value, e)
+            return Ellipsis
+
+    # ---------------------
+    #   Lektor properties
+    # ---------------------
 
     @property
     def path(self) -> str:
         # Used in VirtualSourceInfo, used to prune VirtualObjects
-        return f'{self.record.path}{VPATH}/{self.attrib}/{self.group}'
+        return f'{self.record.path}{VPATH}/{self.config.key}/{self.key}'
 
     @property
     def url_path(self) -> str:
         # Actual path to resource as seen by the browser
-        return build_url([self.record.path, self.slug])
+        return build_url([self.record.path, self.slug])  # slug can be None!
 
     def __getitem__(self, name: str) -> object:
+        # needed for preview in admin UI
         if name == '_path':
             return self.path
         elif name == '_alt':
-            return PRIMARY_ALT
+            return self.record.alt
         return None
 
     def iter_source_filenames(self) -> Iterator[str]:
         ''' Enumerate all dependencies '''
-        if self.dependencies:
-            yield from self.dependencies
-        for record in self.children:
+        if self.config.dependencies:
+            yield from self.config.dependencies
+        for record in self._children:
             yield from record.iter_source_filenames()
 
-    def __str__(self) -> str:
-        txt = '<GroupBySource'
-        for x in ['attrib', 'group', 'slug', 'template']:
-            txt += ' {}="{}"'.format(x, getattr(self, x))
-        return txt + ' children={}>'.format(len(self.children))
+    # -----------------------
+    #   Properties & Helper
+    # -----------------------
+
+    @property
+    def children(self):
+        return self._children
+
+    @property
+    def first_child(self) -> Optional[Record]:
+        ''' Returns first referencing page record. '''
+        if self._children:
+            return iter(self._children).__next__()
+        return None
+
+    @property
+    def first_extra(self) -> Optional[object]:
+        ''' Returns first additional / extra info object of first page. '''
+        if not self._children:
+            return None
+        val = iter(self._children.values()).__next__()
+        return val[0] if val else None
+
+    def __lt__(self, other: 'GroupBySource') -> bool:
+        ''' The "group" attribute is used for sorting. '''
+        return self.group < other.group
+
+    def __repr__(self) -> str:
+        return '<GroupBySource path="{}" children={}>'.format(
+            self.path, len(self._children))
+
+    # ---------------------
+    #   Reverse Reference
+    # ---------------------
+
+    def _reverse_reference_records(self) -> None:
+        ''' Attach self to page records. '''
+        for child in self._children:
+            if not hasattr(child, '_groupby'):
+                child._groupby = WeakSet()  # type: ignore[attr-defined]
+            child._groupby.add(self)  # type: ignore[attr-defined]
+
+    @staticmethod
+    def of_record(
+        record: Record,
+        *keys: str,
+        recursive: bool = False
+    ) -> Iterator['GroupBySource']:
+        ''' Extract all referencing groupby virtual objects from a page. '''
+        ctx = get_ctx()
+        # manage dependencies
+        if ctx:
+            for dep in ctx.env.plugins['groupby'].config_dependencies:
+                ctx.record_dependency(dep)
+        # find groups
+        proc_list = [record]
+        while proc_list:
+            page = proc_list.pop(0)
+            if recursive and hasattr(page, 'children'):
+                proc_list.extend(page.children)  # type: ignore[attr-defined]
+            if not hasattr(page, '_groupby'):
+                continue
+            for vobj in page._groupby:  # type: ignore[attr-defined]
+                if not keys or vobj.config.key in keys:
+                    yield vobj
 
 
 class GroupByBuildProgram(BuildProgram):
@@ -129,13 +279,23 @@ class GroupByBuildProgram(BuildProgram):
         GroupByPruner.track(url)
 
     def build_artifact(self, artifact: Artifact) -> None:
-        self.source.pad.db.track_record_dependency(self.source)
-        artifact.render_template_into(self.source.template, this=self.source)
+        get_ctx().record_virtual_dependency(self.source)
+        artifact.render_template_into(
+            self.source.config.template, this=self.source)
 
 
 # -----------------------------------
 #              Helper
 # -----------------------------------
+
+def report_config_error(key: str, field: str, val: str, e: Exception) -> None:
+    ''' Send error message to Lektor reporter. Indicate which field is bad. '''
+    msg = '[ERROR] invalid config for [{}.{}] = "{}",  Error: {}'.format(
+        key, field, val, repr(e))
+    try:
+        reporter._write_line(style(msg, fg='red'))
+    except Exception:
+        print(msg)
 
 
 class GroupByPruner:
@@ -176,18 +336,18 @@ class GroupByPruner:
 
 
 class GroupByModelReader:
-    ''' Find models and flow-models which contain attrib '''
+    ''' Find models and flow-models which contain attribute '''
 
-    def __init__(self, db: Database, attrib: AttributeKey) -> None:
+    def __init__(self, db: Database, attrib: SelectionKey) -> None:
         self._flows = {}  # type: Dict[str, Set[str]]
         self._models = {}  # type: Dict[str, Dict[str, str]]
-        # find flow blocks with attrib
+        # find flow blocks containing attribute
         for key, flow in db.flowblocks.items():
             tmp1 = set(f.name for f in flow.fields
                        if bool_from_string(f.options.get(attrib, False)))
             if tmp1:
                 self._flows[key] = tmp1
-        # find models with attrib or flow-blocks containing attrib
+        # find models and flow-blocks containing attribute
         for key, model in db.datamodels.items():
             tmp2 = {}  # Dict[str, str]
             for field in model.fields:
@@ -236,7 +396,7 @@ class GroupByState:
     ''' Holds and updates a groupby build state. '''
 
     def __init__(self) -> None:
-        self.state = {}  # type: Dict[GroupKey, Dict[Record, List]]
+        self.state = {}  # type: Dict[GroupKey, Dict[Record, List[object]]]
         self._processed = set()  # type: Set[Record]
 
     def __contains__(self, record: Record) -> bool:
@@ -244,10 +404,10 @@ class GroupByState:
         return record.path in self._processed
 
     def items(self) -> Iterable[Tuple[GroupKey, Dict]]:
-        ''' Iterable with (GroupKey, {record: extras}) tuples. '''
+        ''' Iterable with (GroupKey, {record: [extras]}) tuples. '''
         return self.state.items()
 
-    def add(self, record: Record, group: Dict[GroupKey, List]) -> None:
+    def add(self, record: Record, group: Dict[GroupKey, List[object]]) -> None:
         ''' Append groups if not processed already. '''
         if record.path not in self._processed:
             self._processed.add(record.path)
@@ -264,34 +424,35 @@ class GroupByWatcher:
     Callback may yield one or more (group-key, extra-info) tuples.
     '''
 
-    def __init__(
-        self,
-        root: str,
-        attrib: AttributeKey,
-        callback: GroupingCallback, *,
-        slug: Optional[str] = None,  # default: "{attrib}/{group}/index.html"
-        template: Optional[str] = None  # default: "groupby-attrib.html"
-    ) -> None:
-        self.root = root
-        self.attrib = attrib
-        self.callback = callback
-        self.slug = slug
-        self.template = template
-        # user editable attributes
-        self.flatten = True  # if False, dont explode FlowType
-        self.dependencies = set()  # type: Set[str]
+    def __init__(self, config: GroupByConfig) -> None:
+        self.config = config
+        self.flatten = True
+        self.callback = None  # type: GroupingCallback #type:ignore[assignment]
+
+    def grouping(self, flatten: bool = True) \
+            -> Callable[[GroupingCallback], None]:
+        '''
+        Decorator to subscribe to attrib-elements.
+        If flatten = False, dont explode FlowType.
+
+        (record, field-key, field) -> (group-key, extra-info)
+        '''
+        def _decorator(fn: GroupingCallback) -> None:
+            self.flatten = flatten
+            self.callback = fn
+        return _decorator
 
     def initialize(self, db: Database) -> None:
         ''' Reset internal state. You must initialize before each build! '''
+        assert callable(self.callback), 'No grouping callback provided.'
+        self._root = self.config.root
         self._state = GroupByState()
-        self._model_reader = GroupByModelReader(db, self.attrib)
+        self._model_reader = GroupByModelReader(db, attrib=self.config.key)
 
-    def should_process(self, node: SourceObject) -> bool:
+    def should_process(self, node: Record) -> bool:
         ''' Check if record path is being watched. '''
-        if isinstance(node, Record):
-            p = node['_path']  # type: str
-            return p.startswith(self.root) or p + '/' == self.root
-        return False
+        p = node['_path']  # type: str
+        return p.startswith(self._root) or p + '/' == self._root
 
     def process(self, record: Record) -> None:
         '''
@@ -300,34 +461,36 @@ class GroupByWatcher:
         '''
         if record in self._state:
             return
-        tmp = {}
+        tmp = {}  # type: Dict[GroupKey, List[object]]
         for key, field in self._model_reader.read(record, self.flatten):
-            for ret in self.callback(GroupByCallbackArgs(record, key, field)):
-                assert isinstance(ret, (tuple, list)), \
-                    'Must return tuple (group-key, extra-info)'
-                group_key, extra = ret
-                if group_key not in tmp:
-                    tmp[group_key] = [extra]
-                else:
-                    tmp[group_key].append(extra)
+            _gen = self.callback(GroupByCallbackArgs(record, key, field))
+            try:
+                obj = next(_gen)
+                while True:
+                    if not isinstance(obj, (str, tuple)):
+                        raise TypeError(f'Unsupported groupby yield: {obj}')
+                    group = obj if isinstance(obj, str) else obj[0]
+                    if group not in tmp:
+                        tmp[group] = []
+                    if isinstance(obj, tuple):
+                        tmp[group].append(obj[1])
+                    # return slugified group key and continue iteration
+                    if isinstance(_gen, Generator) and not _gen.gi_yieldfrom:
+                        obj = _gen.send(self.config.slugify(group))
+                    else:
+                        obj = next(_gen)
+            except StopIteration:
+                del _gen
         self._state.add(record, tmp)
 
     def iter_sources(self, root: Record) -> Iterator[GroupBySource]:
         ''' Prepare and yield GroupBySource elements. '''
-        for group_key, children in self._state.items():
-            src = GroupBySource(root, self.attrib, group_key,
-                                slug=self.slug, template=self.template)
-            src.dependencies = self.dependencies
-            src.children = children
-            yield src
+        for group, children in self._state.items():
+            yield GroupBySource(root, group, self.config, children=children)
 
-    def __str__(self) -> str:
-        txt = '<GroupByWatcher'
-        for x in [
-            'root', 'attrib', 'slug', 'template', 'flatten', 'dependencies'
-        ]:
-            txt += ' {}="{}"'.format(x, getattr(self, x))
-        return txt + '>'
+    def __repr__(self) -> str:
+        return '<GroupByWatcher key="{}" enabled={} callback={}>'.format(
+            self.config.key, self.config.enabled, self.callback)
 
 
 # -----------------------------------
@@ -345,45 +508,30 @@ class GroupByCreator:
     def __init__(self) -> None:
         self._watcher = []  # type: List[GroupByWatcher]
         self._results = {}  # type: Dict[str, GroupBySource]
-        self._resolve_map = {}  # type: Dict[str, ResolverConf]
+        self._resolver = {}  # type: Dict[str, Tuple[GroupKey, GroupByConfig]]
+        self._weak_ref_keep_alive = []  # type: List[GroupBySource]
 
     # ----------------
     #   Add Observer
     # ----------------
 
-    def depends_on(self, *args: str) \
-            -> Callable[[GroupByWatcher], GroupByWatcher]:
-        ''' Set GroupBySource dependency, e.g., a plugin config file. '''
-        def _decorator(r: GroupByWatcher) -> GroupByWatcher:
-            r.dependencies.update(list(args))
-            return r
-        return _decorator
-
-    def watch(
+    def add_watcher(
         self,
-        root: str,
-        attrib: AttributeKey, *,
-        slug: Optional[str] = None,  # default: "{attrib}/{group}/index.html"
-        template: Optional[str] = None,  # default: "groupby-attrib.html"
-        flatten: bool = True,  # if False, dont explode FlowType
-    ) -> Callable[[GroupingCallback], GroupByWatcher]:
-        '''
-        Decorator to subscribe to attrib-elements.
-        (record, field-key, field) -> (group-key, extra-info)
+        key: SelectionKey,
+        config: Union[GroupByConfig, IniFile, Dict]
+    ) -> GroupByWatcher:
+        ''' Init GroupByConfig and add to watch list. '''
+        assert isinstance(config, (GroupByConfig, IniFile, Dict))
+        if isinstance(config, GroupByConfig):
+            cfg = config
+        elif isinstance(config, IniFile):
+            cfg = GroupByConfig.from_ini(key, config)
+        elif isinstance(config, Dict):
+            cfg = GroupByConfig.from_dict(key, config)
 
-        :DEFAULTS:
-        slug: "{attrib}/{group}/index.html"
-        template: "groupby-attrib.html"
-        '''
-        root = root.rstrip('/') + '/'
-
-        def _decorator(fn: GroupingCallback) -> GroupByWatcher:
-            w = GroupByWatcher(root, attrib, fn, slug=slug, template=template)
-            w.flatten = flatten
-            self._watcher.append(w)
-            return w
-
-        return _decorator
+        w = GroupByWatcher(cfg)
+        self._watcher.append(w)
+        return w
 
     # -----------
     #   Builder
@@ -393,15 +541,25 @@ class GroupByCreator:
         ''' Reset prvious results. Must be called before each build. '''
         self._watcher.clear()
         self._results.clear()
-        self._resolve_map.clear()
+        self._resolver.clear()
+        self._weak_ref_keep_alive.clear()
+
+    def get_dependencies(self) -> Set[str]:
+        deps = set()  # type: Set[str]
+        for w in self._watcher:
+            deps.update(w.config.dependencies)
+        return deps
 
     def make_cluster(self, builder: Builder) -> None:
-        ''' Perform groupby, iterate over all children. '''
+        ''' Iterate over all children and perform groupby. '''
+        # remove disabled watchers
+        self._watcher = [w for w in self._watcher if w.config.enabled]
         if not self._watcher:
             return
+        # initialize remaining (enabled) watchers
         for w in self._watcher:
             w.initialize(builder.pad.db)
-
+        # iterate over whole build tree
         queue = builder.pad.get_all_roots()  # type: List[SourceObject]
         while queue:
             record = queue.pop()
@@ -412,24 +570,31 @@ class GroupByCreator:
                 queue.extend(record.children)  # type: ignore[attr-defined]
         # build artifacts
         for w in self._watcher:
-            root = builder.pad.get(w.root)
+            root = builder.pad.get(w.config.root)
             for vobj in w.iter_sources(root):
-                self._results[vobj.url_path] = vobj
+                if vobj.slug:
+                    url = vobj.url_path
+                    self._results[url] = vobj
+                    self._resolver[url] = (vobj.group, w.config)
+                else:
+                    self._weak_ref_keep_alive.append(vobj)  # for weak ref
         self._watcher.clear()
 
     def queue_now(self, node: SourceObject) -> None:
         ''' Process record immediatelly (No-Op if already processed). '''
-        for w in self._watcher:
-            if w.should_process(node):  # ensures type Record
-                w.process(node)  # type: ignore[arg-type]
+        if isinstance(node, Record):
+            for w in self._watcher:
+                if w.should_process(node):
+                    w.process(node)
 
     def build_all(self, builder: Builder) -> None:
         ''' Create virtual objects and build sources. '''
-        for url, x in sorted(self._results.items()):
-            builder.build(x)
-            self._resolve_map[url] = ResolverConf(
-                x.record['_path'], x.attrib, x.group, x.slug)
+        path_cache = PathCache(builder.env)
+        for _, vobj in sorted(self._results.items()):
+            builder.build(vobj, path_cache)
+        del path_cache
         self._results.clear()
+        self._weak_ref_keep_alive.clear()  # garbage collect weak refs
 
     # -----------------
     #   Path resolver
@@ -441,20 +606,22 @@ class GroupByCreator:
         ''' Dev server only: Resolves path/ -> path/index.html '''
         if not isinstance(node, Record):
             return None
-        conf = self._resolve_map.get(build_url([node.url_path] + pieces))
-        if not conf:
+        rv = self._resolver.get(build_url([node.url_path] + pieces))
+        if not rv:
             return None
-        return GroupBySource(node, conf.attrib, conf.group, slug=conf.slug)
+        group, conf = rv
+        return GroupBySource(node, group, conf)
 
     def resolve_virtual_path(
         self, node: SourceObject, pieces: List[str]
     ) -> Optional[GroupBySource]:
         if isinstance(node, Record) and len(pieces) >= 2:
-            test_node = (node['_path'], pieces[0], pieces[1])
-            for url, conf in self._resolve_map.items():
-                if test_node == conf[:3]:
-                    _, attr, group, slug = conf
-                    return GroupBySource(node, attr, group, slug=slug)
+            path = node['_path']  # type: str
+            key, grp, *_ = pieces
+            for group, conf in self._resolver.values():
+                if key == conf.key and path == conf.root:
+                    if conf.slugify(group) == grp:
+                        return GroupBySource(node, group, conf)
         return None
 
 
@@ -470,12 +637,14 @@ class GroupByPlugin(Plugin):
     def on_setup_env(self, **extra: object) -> None:
         self.creator = GroupByCreator()
         self.env.add_build_program(GroupBySource, GroupByBuildProgram)
+        self.env.jinja_env.filters.update(groupby=GroupBySource.of_record)
 
         # resolve /tag/rss/ -> /tag/rss/index.html (local server only)
         @self.env.urlresolver
         def a(node: SourceObject, parts: List[str]) -> Optional[GroupBySource]:
             return self.creator.resolve_dev_server_path(node, parts)
 
+        # resolve virtual objects in admin UI
         @self.env.virtualpathresolver(VPATH.lstrip('@'))
         def b(node: SourceObject, parts: List[str]) -> Optional[GroupBySource]:
             return self.creator.resolve_virtual_path(node, parts)
@@ -483,28 +652,27 @@ class GroupByPlugin(Plugin):
     def _load_quick_config(self) -> None:
         ''' Load config file quick listeners. '''
         config = self.get_config()
-        for attrib in config.sections():
-            sect = config.section_as_dict(attrib)
-            root = sect.get('root', '/')
-            slug = sect.get('slug')
-            temp = sect.get('template')
-            split = sect.get('split')
+        for key in config.sections():
+            if '.' in key:  # e.g., key.fields and key.key_map
+                continue
 
-            @self.creator.depends_on(self.config_filename)
-            @self.creator.watch(root, attrib, slug=slug, template=temp)
-            def _fn(args: GroupByCallbackArgs) \
-                    -> Iterator[Tuple[GroupKey, object]]:
+            watcher = self.creator.add_watcher(key, config)
+            split = config.get(key + '.split')  # type: str
+
+            @watcher.grouping()
+            def _fn(args: GroupByCallbackArgs) -> Iterator[GroupKey]:
                 val = args.field
                 if isinstance(val, str):
                     val = val.split(split) if split else [val]  # make list
                 if isinstance(val, list):
-                    for tag in val:
-                        yield slugify(tag), tag
+                    yield from val
 
     def on_before_build_all(self, builder: Builder, **extra: object) -> None:
         self.creator.clear_previous_results()
+        self._load_quick_config()
         # let other plugins register their @groupby.watch functions
         self.emit('before-build-all', groupby=self.creator, builder=builder)
+        self.config_dependencies = self.creator.get_dependencies()
         self.creator.make_cluster(builder)
 
     def on_before_build(self, source: SourceObject, **extra: object) -> None:
@@ -513,9 +681,6 @@ class GroupByPlugin(Plugin):
         self.creator.queue_now(source)
 
     def on_after_build_all(self, builder: Builder, **extra: object) -> None:
-        self.emit('after-build-all', groupby=self.creator, builder=builder)
-        self._load_quick_config()
-        self.creator.make_cluster(builder)
         self.creator.build_all(builder)
 
     def on_after_prune(self, builder: Builder, **extra: object) -> None:
