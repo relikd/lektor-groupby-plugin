@@ -2,10 +2,10 @@ from lektor.db import Database, Record  # typing
 from lektor.types.flow import Flow, FlowType
 from lektor.utils import bool_from_string
 
-from typing import Set, Dict, List, Tuple, Union, NamedTuple
+from typing import Set, Dict, List, Tuple, Any, Union, NamedTuple
 from typing import Optional, Callable, Iterable, Iterator, Generator
-from .vobj import GroupBySource, GroupKey
-from .config import Config, ConfigKey
+from .vobj import GroupBySource
+from .config import Config
 
 
 # -----------------------------------
@@ -21,14 +21,12 @@ class FieldKeyPath(NamedTuple):
 class GroupByCallbackArgs(NamedTuple):
     record: Record
     key: FieldKeyPath
-    field: object  # lektor model data-field value
+    field: Any  # lektor model data-field value
 
-
-GroupByCallbackYield = Union[GroupKey, Tuple[GroupKey, object]]
 
 GroupingCallback = Callable[[GroupByCallbackArgs], Union[
-    Iterator[GroupByCallbackYield],
-    Generator[GroupByCallbackYield, Optional[str], None],
+    Iterator[Union[str, Tuple[str, Any]]],
+    Generator[Union[str, Tuple[str, Any]], Optional[str], None],
 ]]
 
 
@@ -36,10 +34,10 @@ GroupingCallback = Callable[[GroupByCallbackArgs], Union[
 #            ModelReader
 # -----------------------------------
 
-class ModelReader:
+class GroupByModelReader:
     ''' Find models and flow-models which contain attribute '''
 
-    def __init__(self, db: Database, attrib: ConfigKey) -> None:
+    def __init__(self, db: Database, attrib: str) -> None:
         self._flows = {}  # type: Dict[str, Set[str]]
         self._models = {}  # type: Dict[str, Dict[str, str]]
         # find flow blocks containing attribute
@@ -67,7 +65,7 @@ class ModelReader:
         self,
         record: Record,
         flatten: bool = False
-    ) -> Iterator[Tuple[FieldKeyPath, object]]:
+    ) -> Iterator[Tuple[FieldKeyPath, Any]]:
         '''
         Enumerate all fields of a Record with attrib = True.
         Flows are either returned directly (flatten=False) or
@@ -97,30 +95,30 @@ class ModelReader:
 #               State
 # -----------------------------------
 
-class State:
-    ''' Holds and updates a groupby build state. '''
+class GroupByState:
+    ''' Store and update a groupby build state. {group: {record: [extras]}} '''
 
     def __init__(self) -> None:
-        self.state = {}  # type: Dict[GroupKey, Dict[Record, List[object]]]
+        self.state = {}  # type: Dict[str, Dict[Record, List[Any]]]
         self._processed = set()  # type: Set[Record]
 
     def __contains__(self, record: Record) -> bool:
         ''' Returns True if record was already processed. '''
         return record.path in self._processed
 
-    def items(self) -> Iterable[Tuple[GroupKey, Dict]]:
-        ''' Iterable with (GroupKey, {record: [extras]}) tuples. '''
+    def items(self) -> Iterable[Tuple[str, Dict[Record, List[Any]]]]:
+        ''' Iterable with (group, {record: [extras]}) tuples. '''
         return self.state.items()
 
-    def add(self, record: Record, group: Dict[GroupKey, List[object]]) -> None:
-        ''' Append groups if not processed already. '''
+    def add(self, record: Record, sub_groups: Dict[str, List[Any]]) -> None:
+        ''' Append groups if not processed already. {group: [extras]} '''
         if record.path not in self._processed:
             self._processed.add(record.path)
-            for group_key, extras in group.items():
-                if group_key in self.state:
-                    self.state[group_key][record] = extras
+            for group, extras in sub_groups.items():
+                if group in self.state:
+                    self.state[group][record] = extras
                 else:
-                    self.state[group_key] = {record: extras}
+                    self.state[group] = {record: extras}
 
 
 # -----------------------------------
@@ -130,7 +128,7 @@ class State:
 class Watcher:
     '''
     Callback is called with (Record, FieldKeyPath, field-value).
-    Callback may yield one or more (group-key, extra-info) tuples.
+    Callback may yield one or more (group, extra-info) tuples.
     '''
 
     def __init__(self, config: Config) -> None:
@@ -144,7 +142,7 @@ class Watcher:
         Decorator to subscribe to attrib-elements.
         If flatten = False, dont explode FlowType.
 
-        (record, field-key, field) -> (group-key, extra-info)
+        (record, field-key, field) -> (group, extra-info)
         '''
         def _decorator(fn: GroupingCallback) -> None:
             self.flatten = flatten
@@ -155,8 +153,8 @@ class Watcher:
         ''' Reset internal state. You must initialize before each build! '''
         assert callable(self.callback), 'No grouping callback provided.'
         self._root = self.config.root
-        self._state = State()
-        self._model_reader = ModelReader(db, attrib=self.config.key)
+        self._state = GroupByState()
+        self._model_reader = GroupByModelReader(db, attrib=self.config.key)
 
     def should_process(self, node: Record) -> bool:
         ''' Check if record path is being watched. '''
@@ -170,7 +168,7 @@ class Watcher:
         '''
         if record in self._state:
             return
-        tmp = {}  # type: Dict[GroupKey, List[object]]
+        tmp = {}  # type: Dict[str, List[Any]] # {group: [extras]}
         for key, field in self._model_reader.read(record, self.flatten):
             _gen = self.callback(GroupByCallbackArgs(record, key, field))
             try:

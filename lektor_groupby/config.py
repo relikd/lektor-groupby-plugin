@@ -1,9 +1,8 @@
 from inifile import IniFile
 from lektor.utils import slugify
 
-from typing import NewType, Set, Dict, Optional, Union
+from typing import Set, Dict, Optional, Union
 
-ConfigKey = NewType('ConfigKey', str)  # attribute of lektor model
 AnyConfig = Union['Config', IniFile, Dict]
 
 
@@ -18,14 +17,14 @@ class Config:
 
     def __init__(
         self,
-        key: ConfigKey, *,
+        key: str, *,
         root: Optional[str] = None,  # default: "/"
         slug: Optional[str] = None,  # default: "{attr}/{group}/index.html"
         template: Optional[str] = None,  # default: "groupby-{attr}.html"
     ) -> None:
         self.key = key
         self.root = (root or '/').rstrip('/') + '/'
-        self.slug = slug or f'"{key}/" ~ this.key ~ "/"'  # this: GroupBySource
+        self.slug = slug or (key + '/{key}/')  # key = GroupBySource.key
         self.template = template or f'groupby-{self.key}.html'
         # editable after init
         self.enabled = True
@@ -57,7 +56,7 @@ class Config:
         return txt + '>'
 
     @staticmethod
-    def from_dict(key: ConfigKey, cfg: Dict[str, str]) -> 'Config':
+    def from_dict(key: str, cfg: Dict[str, str]) -> 'Config':
         ''' Set config fields manually. Allowed: key, root, slug, template. '''
         return Config(
             key=key,
@@ -67,7 +66,7 @@ class Config:
         )
 
     @staticmethod
-    def from_ini(key: ConfigKey, ini: IniFile) -> 'Config':
+    def from_ini(key: str, ini: IniFile) -> 'Config':
         ''' Read and parse ini file. Also adds dependency tracking. '''
         cfg = ini.section_as_dict(key)  # type: Dict[str, str]
         conf = Config.from_dict(key, cfg)
@@ -78,7 +77,7 @@ class Config:
         return conf
 
     @staticmethod
-    def from_any(key: ConfigKey, config: AnyConfig) -> 'Config':
+    def from_any(key: str, config: AnyConfig) -> 'Config':
         assert isinstance(config, (Config, IniFile, Dict))
         if isinstance(config, Config):
             return config

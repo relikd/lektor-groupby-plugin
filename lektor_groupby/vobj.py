@@ -6,14 +6,13 @@ from lektor.environment import Expression
 from lektor.sourceobj import VirtualSourceObject  # subclass
 from lektor.utils import build_url
 
-from typing import Dict, List, Any, Optional, Iterator, NewType
+from typing import Dict, List, Any, Optional, Iterator
 from weakref import WeakSet
 from .config import Config
 from .pruner import track_not_prune
 from .util import report_config_error
 
 VPATH = '@groupby'  # potentially unsafe. All matching entries are pruned.
-GroupKey = NewType('GroupKey', str)  # key of group-by
 
 
 # -----------------------------------
@@ -30,7 +29,7 @@ class GroupBySource(VirtualSourceObject):
     def __init__(
         self,
         record: Record,
-        group: GroupKey,
+        group: str,
         config: Config,
         children: Optional[Dict[Record, List[object]]] = None,
     ) -> None:
@@ -46,8 +45,11 @@ class GroupBySource(VirtualSourceObject):
             self._children[child] = extras
         self._reverse_reference_records()
         # evaluate slug Expression
-        self.slug = self._eval(config.slug, field='slug')  # type: str
-        assert self.slug != Ellipsis, 'invalid config: ' + config.slug
+        if '{key}' in config.slug:
+            self.slug = config.slug.replace('{key}', self.key)
+        else:
+            self.slug = self._eval(config.slug, field='slug')
+            assert self.slug != Ellipsis, 'invalid config: ' + config.slug
         if self.slug and self.slug.endswith('/index.html'):
             self.slug = self.slug[:-10]
         # extra fields
@@ -98,7 +100,7 @@ class GroupBySource(VirtualSourceObject):
     # -----------------------
 
     @property
-    def children(self):
+    def children(self) -> Dict[Record, List[object]]:
         return self._children
 
     @property

@@ -4,8 +4,8 @@ from lektor.sourceobj import SourceObject
 from lektor.utils import build_url
 
 from typing import Set, Dict, List, Optional, Tuple
-from .vobj import GroupBySource, GroupKey
-from .config import Config, ConfigKey, AnyConfig
+from .vobj import GroupBySource
+from .config import Config, AnyConfig
 from .watcher import Watcher
 
 
@@ -19,13 +19,13 @@ class GroupBy:
     def __init__(self) -> None:
         self._watcher = []  # type: List[Watcher]
         self._results = []  # type: List[GroupBySource]
-        self._resolver = {}  # type: Dict[str, Tuple[GroupKey, Config]]
+        self._resolver = {}  # type: Dict[str, Tuple[str, Config]]
 
     # ----------------
     #   Add observer
     # ----------------
 
-    def add_watcher(self, key: ConfigKey, config: AnyConfig) -> Watcher:
+    def add_watcher(self, key: str, config: AnyConfig) -> Watcher:
         ''' Init Config and add to watch list. '''
         w = Watcher(Config.from_any(key, config))
         self._watcher.append(w)

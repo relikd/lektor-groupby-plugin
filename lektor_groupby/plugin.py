@@ -3,7 +3,7 @@ from lektor.pluginsystem import Plugin  # subclass
 from lektor.sourceobj import SourceObject  # typing
 
 from typing import List, Optional, Iterator
-from .vobj import GroupBySource, GroupByBuildProgram, GroupKey, VPATH
+from .vobj import GroupBySource, GroupByBuildProgram, VPATH
 from .groupby import GroupBy
 from .pruner import prune
 from .watcher import GroupByCallbackArgs  # typing
@@ -39,7 +39,7 @@ class GroupByPlugin(Plugin):
             split = config.get(key + '.split')  # type: str
 
             @watcher.grouping()
-            def _fn(args: GroupByCallbackArgs) -> Iterator[GroupKey]:
+            def _fn(args: GroupByCallbackArgs) -> Iterator[str]:
                 val = args.field
                 if isinstance(val, str):
                     val = val.split(split) if split else [val]  # make list
