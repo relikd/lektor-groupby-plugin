@@ -16,7 +16,8 @@ class AdvancedGroupByPlugin(Plugin):
             print('inlinetags.regex not valid: ' + str(e))
             return
 
-        watcher = groupby.add_watcher('testC', config)  # tracks dependency
+        # load config directly (which also tracks dependency)
+        watcher = groupby.add_watcher('testC', config)
 
         @watcher.grouping()
         def _replace(args: GroupByCallbackArgs) -> Generator[str, str, None]:
