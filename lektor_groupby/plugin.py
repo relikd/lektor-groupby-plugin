@@ -16,7 +16,7 @@ class GroupByPlugin(Plugin):
     def on_setup_env(self, **extra: object) -> None:
         self.creator = GroupBy()
         self.env.add_build_program(GroupBySource, GroupByBuildProgram)
-        self.env.jinja_env.filters.update(groupby=GroupBySource.of_record)
+        self.env.jinja_env.filters.update(vgroups=GroupBySource.of_record)
 
         # resolve /tag/rss/ -> /tag/rss/index.html (local server only)
         @self.env.urlresolver

@@ -147,9 +147,9 @@ class GroupBySource(VirtualSourceObject):
     def _reverse_reference_records(self) -> None:
         ''' Attach self to page records. '''
         for child in self._children:
-            if not hasattr(child, '_groupby'):
-                child._groupby = WeakSet()  # type: ignore[attr-defined]
-            child._groupby.add(self)  # type: ignore[attr-defined]
+            if not hasattr(child, '_vgroups'):
+                child._vgroups = WeakSet()  # type: ignore[attr-defined]
+            child._vgroups.add(self)  # type: ignore[attr-defined]
 
     @staticmethod
     def of_record(
@@ -169,9 +169,9 @@ class GroupBySource(VirtualSourceObject):
             page = proc_list.pop(0)
             if recursive and hasattr(page, 'children'):
                 proc_list.extend(page.children)  # type: ignore[attr-defined]
-            if not hasattr(page, '_groupby'):
+            if not hasattr(page, '_vgroups'):
                 continue
-            for vobj in page._groupby:  # type: ignore[attr-defined]
+            for vobj in page._vgroups:  # type: ignore[attr-defined]
                 if not keys or vobj.config.key in keys:
                     yield vobj
 
