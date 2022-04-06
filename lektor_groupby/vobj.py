@@ -31,33 +31,35 @@ class GroupBySource(VirtualSourceObject):
         record: Record,
         group: str,
         config: Config,
-        children: Optional[Dict[Record, List[object]]] = None,
+        children: Optional[Dict[Record, List[Any]]] = None,
     ) -> None:
         super().__init__(record)
         self.key = config.slugify(group)
         self.group = group
         self.config = config
-        # make sure children are on the same pad
-        self._children = {}  # type: Dict[Record, List[object]]
-        for child, extras in (children or {}).items():
-            if child.pad != record.pad:
-                child = record.pad.get(child.path)
-            self._children[child] = extras
-        self._reverse_reference_records()
         # evaluate slug Expression
-        if '{key}' in config.slug:
+        if config.slug and '{key}' in config.slug:
             self.slug = config.slug.replace('{key}', self.key)
         else:
             self.slug = self._eval(config.slug, field='slug')
             assert self.slug != Ellipsis, 'invalid config: ' + config.slug
         if self.slug and self.slug.endswith('/index.html'):
             self.slug = self.slug[:-10]
+        # make sure children are on the same pad
+        self._children = {}  # type: Dict[Record, List[Any]]
+        for child, extras in (children or {}).items():
+            if child.pad != record.pad:
+                child = record.pad.get(child.path)
+            self._children[child] = extras
+        self._reverse_reference_records()
         # extra fields
         for attr, expr in config.fields.items():
             setattr(self, attr, self._eval(expr, field='fields.' + attr))
 
-    def _eval(self, value: str, *, field: str) -> Any:
+    def _eval(self, value: Any, *, field: str) -> Any:
         ''' Internal only: evaluates Lektor config file field expression. '''
+        if not isinstance(value, str):
+            return value
         pad = self.record.pad
         alt = self.record.alt
         try:
@@ -80,14 +82,6 @@ class GroupBySource(VirtualSourceObject):
         # Actual path to resource as seen by the browser
         return build_url([self.record.path, self.slug])  # slug can be None!
 
-    def __getitem__(self, name: str) -> object:
-        # needed for preview in admin UI
-        if name == '_path':
-            return self.path
-        elif name == '_alt':
-            return self.record.alt
-        return None
-
     def iter_source_filenames(self) -> Iterator[str]:
         ''' Enumerate all dependencies '''
         if self.config.dependencies:
@@ -100,7 +94,8 @@ class GroupBySource(VirtualSourceObject):
     # -----------------------
 
     @property
-    def children(self) -> Dict[Record, List[object]]:
+    def children(self) -> Dict[Record, List[Any]]:
+        ''' Returns dict with page record key and (optional) extra value. '''
         return self._children
 
     @property
@@ -111,16 +106,35 @@ class GroupBySource(VirtualSourceObject):
         return None
 
     @property
-    def first_extra(self) -> Optional[object]:
+    def first_extra(self) -> Optional[Any]:
         ''' Returns first additional / extra info object of first page. '''
         if not self._children:
             return None
         val = iter(self._children.values()).__next__()
         return val[0] if val else None
 
+    def __getitem__(self, key: str) -> Any:
+        # Used for virtual path resolver and |sort(attribute="x") filter
+        if key in ('_path', '_alt'):
+            return getattr(self, key[1:])
+        if hasattr(self, key):
+            return getattr(self, key)
+        return None
+
     def __lt__(self, other: 'GroupBySource') -> bool:
-        ''' The "group" attribute is used for sorting. '''
+        # Used for |sort filter ("group" is the provided original string)
         return self.group < other.group
+
+    def __eq__(self, other: object) -> bool:
+        # Used for |unique filter
+        if self is other:
+            return True
+        return isinstance(other, GroupBySource) and \
+            self.path == other.path and self.slug == other.slug
+
+    def __hash__(self) -> int:
+        # Used for hashing in set and dict
+        return hash((self.path, self.slug))
 
     def __repr__(self) -> str:
         return '<GroupBySource path="{}" children={}>'.format(
