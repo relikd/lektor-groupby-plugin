@@ -114,12 +114,10 @@ class GroupBySource(VirtualSourceObject):
         return val[0] if val else None
 
     def __getitem__(self, key: str) -> Any:
-        # Used for virtual path resolver and |sort(attribute="x") filter
+        # Used for virtual path resolver
         if key in ('_path', '_alt'):
             return getattr(self, key[1:])
-        if hasattr(self, key):
-            return getattr(self, key)
-        return None
+        return self.__missing__(key)  # type: ignore[attr-defined]
 
     def __lt__(self, other: 'GroupBySource') -> bool:
         # Used for |sort filter ("group" is the provided original string)
