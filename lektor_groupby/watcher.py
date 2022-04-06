@@ -74,8 +74,10 @@ class GroupByModelReader:
         '''
         assert isinstance(record, Record)
         for r_key, subs in self._models.get(record.datamodel.id, {}).items():
+            field = record[r_key]
+            if not field:
+                continue
             if subs == '*':  # either normal field or flow type (all blocks)
-                field = record[r_key]
                 if flatten and isinstance(field, Flow):
                     for i, flow in enumerate(field.blocks):
                         flowtype = flow['_flowblock']
@@ -86,7 +88,7 @@ class GroupByModelReader:
                 else:
                     yield FieldKeyPath(r_key), field
             else:  # always flow type (only some blocks)
-                for i, flow in enumerate(record[r_key].blocks):
+                for i, flow in enumerate(field.blocks):
                     flowtype = flow['_flowblock']
                     for f_key in self._flows.get(flowtype, []):
                         yield FieldKeyPath(r_key, i, f_key), flow[f_key]

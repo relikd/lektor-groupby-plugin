@@ -27,7 +27,6 @@ setup(
         'cluster',
     ],
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
         'Environment :: Web Environment',
         'Environment :: Plugins',
         'Framework :: Lektor',
