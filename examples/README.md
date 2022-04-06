@@ -11,7 +11,7 @@ Overview:
 ## About
 
 To use the groupby plugin you have to add an attribute to your model file.
-In our case you can refer to the `models/page.ini` model:
+In our case you can refer to the [`models/page.ini`](./models/page.ini) model:
 
 ```ini
 [fields.tags]
@@ -36,10 +36,10 @@ The attribute name is later used for grouping.
 ## Quick config
 
 Relevant files:
-```
-configs/groupby.ini
-templates/example-config.html
-```
+
+- [`configs/groupby.ini`](./configs/groupby.ini)
+- [`templates/example-config.html`](./templates/example-config.html)
+
 
 The easiest way to add tags to your site is by defining the `groupby.ini` config file.
 
@@ -133,10 +133,10 @@ In your template file you have access to the attributes, config, and children (p
 ## Simple example
 
 Relevant files:
-```
-packages/simple-example/lektor_simple.py
-templates/example-simple.html
-```
+
+- [`packages/simple-example/lektor_simple.py`](./packages/simple-example/lektor_simple.py)
+- [`templates/example-simple.html`](./templates/example-simple.html)
+
 
 ```python
 def on_groupby_before_build_all(self, groupby, builder, **extra):
@@ -204,11 +204,11 @@ The template file can access and display the `extra-info`:
 ## Advanced example
 
 Relevant files:
-```
-configs/advanced.ini
-packages/advanced-example/lektor_advanced.py
-templates/example-advanced.html
-```
+
+- [`configs/advanced.ini`](./configs/advanced.ini)
+- [`packages/advanced-example/lektor_advanced.py`](./packages/advanced-example/lektor_advanced.py)
+- [`templates/example-advanced.html`](./templates/example-advanced.html)
+
 
 The following example is similar to the previous one.
 Except that it loads a config file and replaces in-text occurrences of `{{Tagname}}` with `<a href="/tag/">Tagname</a>`.
@@ -284,4 +284,4 @@ This can be done in combination with the next use-case:
 
 You can query the groups of any parent node (including those without slug).
 The keys (`'TestA', 'TestB'`) can be omitted which will return all groups of all attributes (you can still filter them with `x.config.key == 'TestC'`).
-Refer to `templates/page.html` for usage.
+Refer to [`templates/page.html`](./templates/page.html) for usage.
