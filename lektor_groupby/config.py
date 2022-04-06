@@ -1,7 +1,7 @@
 from inifile import IniFile
 from lektor.utils import slugify
 
-from typing import Set, Dict, Optional, Union
+from typing import Set, Dict, Optional, Union, Any
 
 AnyConfig = Union['Config', IniFile, Dict]
 
@@ -23,20 +23,20 @@ class Config:
         template: Optional[str] = None,  # default: "groupby-{attr}.html"
     ) -> None:
         self.key = key
-        self.root = (root or '/').rstrip('/') + '/'
+        self.root = (root or '/').rstrip('/') or '/'
         self.slug = slug or (key + '/{key}/')  # key = GroupBySource.key
         self.template = template or f'groupby-{self.key}.html'
         # editable after init
         self.enabled = True
         self.dependencies = set()  # type: Set[str]
-        self.fields = {}  # type: Dict[str, str]
+        self.fields = {}  # type: Dict[str, Any]
         self.key_map = {}  # type: Dict[str, str]
 
     def slugify(self, k: str) -> str:
         ''' key_map replace and slugify. '''
         return slugify(self.key_map.get(k, k))  # type: ignore[no-any-return]
 
-    def set_fields(self, fields: Optional[Dict[str, str]]) -> None:
+    def set_fields(self, fields: Optional[Dict[str, Any]]) -> None:
         '''
         The fields dict is a mapping of attrib = Expression values.
         Each dict key will be added to the GroupBySource virtual object.

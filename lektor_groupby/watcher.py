@@ -158,8 +158,7 @@ class Watcher:
 
     def should_process(self, node: Record) -> bool:
         ''' Check if record path is being watched. '''
-        p = node['_path']  # type: str
-        return p.startswith(self._root) or p + '/' == self._root
+        return node['_path'].startswith(self._root)
 
     def process(self, record: Record) -> None:
         '''
