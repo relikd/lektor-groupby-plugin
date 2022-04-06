@@ -18,20 +18,12 @@ main { margin: 3em; }
     {% block body %}{{ this.body }}{% endblock %}
   </main>
   <footer>
-    <div>Simple Tags:
-      {% for tag in ['blog','directory','blog-post','initial','samegroup'] %}
-      <a href="/blog/simple/{{tag}}/">({{tag}})</a>
-      {% endfor %}
+    {%- for k, v in [('testA','Config'),('testB','Simple'),('testC','Advanced')] %}
+    <div>{{v}} Tags:
+      {%- for x in this|groupby(k, recursive=True)|list|unique|sort %} 
+        <a href="{{ x|url }}">({{x.key}})</a>
+      {%- endfor %} 
     </div>
-    <div>Config Tags:
-      {% for tag in ['root','blog','directory','blog-post','initial','samegroup'] %}
-      <a href="/config/{{tag}}.html">({{tag}})</a>
-      {% endfor %}
-    </div>
-    <div>Advanced Tags:
-      {% for tag in ['tag','two','blog'] %}
-      <a href="/advanced/{{tag}}/">({{tag}})</a>
-      {% endfor %}
-    </div>
+    {%- endfor %}
   </footer>
 </body>

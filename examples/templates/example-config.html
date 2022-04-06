@@ -1,7 +1,9 @@
 <h2>Path: {{ this | url(absolute=True) }}</h2>
-<div>This is: {{this}}</div>
+<p>This is: {{this}}</p>
+<p>Group: "{{this.group}}", Key: "{{this.key}}"</p>
+<p>Custom field title: {{this.title}}</p>
 <ul>
-	{%- for child, extras in this.children.items() %}
-	<li>Page: {{ child.path }}, Tags: {{ extras }}</li>
-	{%- endfor %}
+{%- for child in this.children %}
+<li>Child: <a href="{{child|url}}">{{child.title}}</a> ({{child.path}})</li>
+{%- endfor %}
 </ul>

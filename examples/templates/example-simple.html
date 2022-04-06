@@ -1,12 +1,9 @@
 <h2>Path: {{ this | url(absolute=True) }}</h2>
-<div>This is: {{this}}</div>
+<p>This is: {{this}}</p>
+<p>Custom field date: {{this.date}}</p>
 <ul>
-	{%- for child, extras in this.children.items() %}
-	<li>Page: {{ child.path }}</li>
-	<ul>
-		{%- for extra in extras %}
-		Name: {{ extra.val }}, Tag count: {{ extra.tags_in_page }}
-		{%- endfor %}
-	</ul>
-	{%- endfor %}
+{%- for child, extras in this.children.items() -%}
+{%- set etxra = (extras|first).tags_in_page %}
+<li>{{etxra|length}} tags on page "{{child.path}}": {{etxra}}</li>
+{%- endfor %}
 </ul>
