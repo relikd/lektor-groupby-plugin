@@ -3,9 +3,10 @@ from lektor.types.flow import Flow, FlowType
 from lektor.utils import bool_from_string
 
 from typing import Set, Dict, List, Tuple, Any, Union, NamedTuple
-from typing import Optional, Callable, Iterable, Iterator, Generator
+from typing import Optional, Callable, Iterator, Generator
 from .vobj import GroupBySource
 from .config import Config
+from .util import most_used_key
 
 
 # -----------------------------------
@@ -92,36 +93,6 @@ class GroupByModelReader:
 
 
 # -----------------------------------
-#               State
-# -----------------------------------
-
-class GroupByState:
-    ''' Store and update a groupby build state. {group: {record: [extras]}} '''
-
-    def __init__(self) -> None:
-        self.state = {}  # type: Dict[str, Dict[Record, List[Any]]]
-        self._processed = set()  # type: Set[Record]
-
-    def __contains__(self, record: Record) -> bool:
-        ''' Returns True if record was already processed. '''
-        return record.path in self._processed
-
-    def items(self) -> Iterable[Tuple[str, Dict[Record, List[Any]]]]:
-        ''' Iterable with (group, {record: [extras]}) tuples. '''
-        return self.state.items()
-
-    def add(self, record: Record, sub_groups: Dict[str, List[Any]]) -> None:
-        ''' Append groups if not processed already. {group: [extras]} '''
-        if record.path not in self._processed:
-            self._processed.add(record.path)
-            for group, extras in sub_groups.items():
-                if group in self.state:
-                    self.state[group][record] = extras
-                else:
-                    self.state[group] = {record: extras}
-
-
-# -----------------------------------
 #              Watcher
 # -----------------------------------
 
@@ -153,8 +124,10 @@ class Watcher:
         ''' Reset internal state. You must initialize before each build! '''
         assert callable(self.callback), 'No grouping callback provided.'
         self._root = self.config.root
-        self._state = GroupByState()
         self._model_reader = GroupByModelReader(db, attrib=self.config.key)
+        self._state = {}  # type: Dict[str, Dict[Record, List[Any]]]
+        self._group_map = {}  # type: Dict[str, List[str]]
+        self._processed = set()  # type: Set[str]
 
     def should_process(self, node: Record) -> bool:
         ''' Check if record path is being watched. '''
@@ -165,9 +138,9 @@ class Watcher:
         Will iterate over all record fields and call the callback method.
         Each record is guaranteed to be processed only once.
         '''
-        if record in self._state:
+        if record.path in self._processed:
             return
-        tmp = {}  # type: Dict[str, List[Any]] # {group: [extras]}
+        self._processed.add(record.path)
         for key, field in self._model_reader.read(record, self.flatten):
             _gen = self.callback(GroupByCallbackArgs(record, key, field))
             try:
@@ -175,24 +148,42 @@ class Watcher:
                 while True:
                     if not isinstance(obj, (str, tuple)):
                         raise TypeError(f'Unsupported groupby yield: {obj}')
-                    group = obj if isinstance(obj, str) else obj[0]
-                    if group not in tmp:
-                        tmp[group] = []
-                    if isinstance(obj, tuple):
-                        tmp[group].append(obj[1])
+                    slug = self._persist(record, obj)
                     # return slugified group key and continue iteration
                     if isinstance(_gen, Generator) and not _gen.gi_yieldfrom:
-                        obj = _gen.send(self.config.slugify(group))
+                        obj = _gen.send(slug)
                     else:
                         obj = next(_gen)
             except StopIteration:
                 del _gen
-        self._state.add(record, tmp)
+
+    def _persist(self, record: Record, obj: Union[str, tuple]) -> str:
+        group = obj if isinstance(obj, str) else obj[0]
+        slug = self.config.slugify(group)
+        # init group-key
+        if slug not in self._state:
+            self._state[slug] = {}
+            self._group_map[slug] = []
+        # _group_map is later used to find most used group
+        self._group_map[slug].append(group)
+        # init group extras
+        if record not in self._state[slug]:
+            self._state[slug][record] = []
+        # (optional) append extra
+        if isinstance(obj, tuple):
+            self._state[slug][record].append(obj[1])
+        return slug
 
     def iter_sources(self, root: Record) -> Iterator[GroupBySource]:
         ''' Prepare and yield GroupBySource elements. '''
-        for group, children in self._state.items():
+        for key, children in self._state.items():
+            group = most_used_key(self._group_map[key])
             yield GroupBySource(root, group, self.config, children=children)
+        # cleanup. remove this code if you'd like to iter twice
+        del self._model_reader
+        del self._state
+        del self._group_map
+        del self._processed
 
     def __repr__(self) -> str:
         return '<GroupByWatcher key="{}" enabled={} callback={}>'.format(
