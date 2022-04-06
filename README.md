@@ -5,11 +5,10 @@ Can be used for tagging or similar tasks.
 The grouping algorithm is performed once.
 Contrary to, at least, cubic runtime if doing the same with Pad queries.
 
-To install this plugin, modify your Lektor project file:
+Install this plugin or modify your Lektor project file:
 
-```ini
-[packages]
-lektor-groupby = 0.9.1
+```sh
+lektor plugin add groupby
 ```
 
 Optionally, enable a basic config:
