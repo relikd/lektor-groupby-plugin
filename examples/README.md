@@ -6,6 +6,8 @@ Overview:
 - [advanced example](#advanced-example) touches on the potentials of the plugin.
 - [Misc](#misc) shows other use-cases.
 
+After reading this tutorial, have a look at other plugins that use `lektor-groupby`:
+- [lektor-inlinetags](https://github.com/relikd/lektor-inlinetags-plugin)
 
 
 ## About
