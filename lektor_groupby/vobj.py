@@ -51,7 +51,7 @@ class GroupBySource(VirtualSourceObject):
             if child.pad != record.pad:
                 child = record.pad.get(child.path)
             self._children[child] = extras
-        self._reverse_reference_records()
+            VGroups.of(child).add(self)
         # extra fields
         for attr, expr in config.fields.items():
             setattr(self, attr, self._eval(expr, field='fields.' + attr))
@@ -138,19 +138,23 @@ class GroupBySource(VirtualSourceObject):
         return '<GroupBySource path="{}" children={}>'.format(
             self.path, len(self._children))
 
-    # ---------------------
-    #   Reverse Reference
-    # ---------------------
 
-    def _reverse_reference_records(self) -> None:
-        ''' Attach self to page records. '''
-        for child in self._children:
-            if not hasattr(child, '_vgroups'):
-                child._vgroups = WeakSet()  # type: ignore[attr-defined]
-            child._vgroups.add(self)  # type: ignore[attr-defined]
+# -----------------------------------
+#          Reverse Reference
+# -----------------------------------
+
+class VGroups:
+    @staticmethod
+    def of(record: Record) -> WeakSet:
+        try:
+            wset = record.__vgroups  # type: ignore[attr-defined]
+        except AttributeError:
+            wset = WeakSet()
+            record.__vgroups = wset  # type: ignore[attr-defined]
+        return wset  # type: ignore[no-any-return]
 
     @staticmethod
-    def of_record(
+    def iter(
         record: Record,
         *keys: str,
         recursive: bool = False
@@ -167,9 +171,8 @@ class GroupBySource(VirtualSourceObject):
             page = proc_list.pop(0)
             if recursive and hasattr(page, 'children'):
                 proc_list.extend(page.children)  # type: ignore[attr-defined]
-            if not hasattr(page, '_vgroups'):
-                continue
-            for vobj in page._vgroups:  # type: ignore[attr-defined]
+            for vobj in VGroups.of(page):
+                vobj.config.dependencies
                 if not keys or vobj.config.key in keys:
                     yield vobj
 

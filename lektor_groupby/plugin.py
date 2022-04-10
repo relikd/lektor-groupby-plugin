@@ -1,9 +1,10 @@
 from lektor.builder import Builder  # typing
+from lektor.db import Page  # typing
 from lektor.pluginsystem import Plugin  # subclass
 from lektor.sourceobj import SourceObject  # typing
 
-from typing import List, Optional, Iterator
-from .vobj import GroupBySource, GroupByBuildProgram, VPATH
+from typing import List, Optional, Iterator, Any
+from .vobj import GroupBySource, GroupByBuildProgram, VPATH, VGroups
 from .groupby import GroupBy
 from .pruner import prune
 from .watcher import GroupByCallbackArgs  # typing
@@ -13,10 +14,10 @@ class GroupByPlugin(Plugin):
     name = 'GroupBy Plugin'
     description = 'Cluster arbitrary records with field attribute keyword.'
 
-    def on_setup_env(self, **extra: object) -> None:
+    def on_setup_env(self, **extra: Any) -> None:
         self.creator = GroupBy()
         self.env.add_build_program(GroupBySource, GroupByBuildProgram)
-        self.env.jinja_env.filters.update(vgroups=GroupBySource.of_record)
+        self.env.jinja_env.filters.update(vgroups=VGroups.iter)
 
         # resolve /tag/rss/ -> /tag/rss/index.html (local server only)
         @self.env.urlresolver
@@ -46,7 +47,7 @@ class GroupByPlugin(Plugin):
                 if isinstance(val, (list, map)):
                     yield from val
 
-    def on_before_build_all(self, builder: Builder, **extra: object) -> None:
+    def on_before_build_all(self, builder: Builder, **extra: Any) -> None:
         self.creator.clear_previous_results()
         self._load_quick_config()
         # let other plugins register their @groupby.watch functions
@@ -54,14 +55,15 @@ class GroupByPlugin(Plugin):
         self.config_dependencies = self.creator.get_dependencies()
         self.creator.make_cluster(builder)
 
-    def on_before_build(self, source: SourceObject, **extra: object) -> None:
+    def on_before_build(self, source: SourceObject, **extra: Any) -> None:
         # before-build may be called before before-build-all (issue #1017)
         # make sure it is evaluated immediatelly
-        self.creator.queue_now(source)
+        if isinstance(source, Page):
+            self.creator.queue_now(source)
 
-    def on_after_build_all(self, builder: Builder, **extra: object) -> None:
+    def on_after_build_all(self, builder: Builder, **extra: Any) -> None:
         self.creator.build_all(builder)
 
-    def on_after_prune(self, builder: Builder, **extra: object) -> None:
+    def on_after_prune(self, builder: Builder, **extra: Any) -> None:
         # TODO: find a better way to prune unreferenced elements
         prune(builder, VPATH)
