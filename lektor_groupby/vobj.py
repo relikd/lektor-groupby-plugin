@@ -158,7 +158,7 @@ class VGroups:
         record: Record,
         *keys: str,
         recursive: bool = False
-    ) -> Iterator['GroupBySource']:
+    ) -> Iterator[GroupBySource]:
         ''' Extract all referencing groupby virtual objects from a page. '''
         ctx = get_ctx()
         # manage dependencies

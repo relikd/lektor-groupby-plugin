@@ -1,11 +1,11 @@
 from lektor.builder import Builder, PathCache
-from lektor.db import Record
-from lektor.sourceobj import SourceObject
-from lektor.utils import build_url
+from lektor.db import Record  # typing
+from lektor.sourceobj import SourceObject  # typing
 
-from typing import Set, Dict, List, Optional, Tuple
-from .vobj import GroupBySource
+from typing import Set, List
+from .vobj import GroupBySource  # typing
 from .config import Config, AnyConfig
+from .resolver import Resolver  # typing
 from .watcher import Watcher
 
 
@@ -19,11 +19,6 @@ class GroupBy:
     def __init__(self) -> None:
         self._watcher = []  # type: List[Watcher]
         self._results = []  # type: List[GroupBySource]
-        self._resolver = {}  # type: Dict[str, Tuple[str, Config]]
-
-    # ----------------
-    #   Add observer
-    # ----------------
 
     def add_watcher(self, key: str, config: AnyConfig) -> Watcher:
         ''' Init Config and add to watch list. '''
@@ -31,24 +26,14 @@ class GroupBy:
         self._watcher.append(w)
         return w
 
-    # -----------
-    #   Builder
-    # -----------
-
-    def clear_previous_results(self) -> None:
-        ''' Reset prvious results. Must be called before each build. '''
-        self._watcher.clear()
-        self._results.clear()
-        self._resolver.clear()
-
     def get_dependencies(self) -> Set[str]:
         deps = set()  # type: Set[str]
         for w in self._watcher:
             deps.update(w.config.dependencies)
         return deps
 
-    def make_cluster(self, builder: Builder) -> None:
-        ''' Iterate over all children and perform groupby. '''
+    def queue_all(self, builder: Builder) -> None:
+        ''' Iterate full site-tree and queue all children. '''
         # remove disabled watchers
         self._watcher = [w for w in self._watcher if w.config.enabled]
         if not self._watcher:
@@ -65,14 +50,6 @@ class GroupBy:
                 queue.extend(record.attachments)  # type: ignore[attr-defined]
             if hasattr(record, 'children'):
                 queue.extend(record.children)  # type: ignore[attr-defined]
-        # build artifacts
-        for w in self._watcher:
-            root = builder.pad.get(w.config.root)
-            for vobj in w.iter_sources(root):
-                self._results.append(vobj)
-                if vobj.slug:
-                    self._resolver[vobj.url_path] = (vobj.group, w.config)
-        self._watcher.clear()
 
     def queue_now(self, node: SourceObject) -> None:
         ''' Process record immediatelly (No-Op if already processed). '''
@@ -80,6 +57,15 @@ class GroupBy:
             for w in self._watcher:
                 if w.should_process(node):
                     w.process(node)
+
+    def make_cluster(self, builder: Builder, resolver: Resolver) -> None:
+        ''' Perform groupby, iter over sources with watcher callback. '''
+        for w in self._watcher:
+            root = builder.pad.get(w.config.root)
+            for vobj in w.iter_sources(root):
+                self._results.append(vobj)
+                resolver.add(vobj)
+        self._watcher.clear()
 
     def build_all(self, builder: Builder) -> None:
         ''' Create virtual objects and build sources. '''
@@ -89,28 +75,3 @@ class GroupBy:
                 builder.build(vobj, path_cache)
         del path_cache
         self._results.clear()  # garbage collect weak refs
-
-    # -----------------
-    #   Path resolver
-    # -----------------
-
-    def resolve_dev_server_path(self, node: SourceObject, pieces: List[str]) \
-            -> Optional[GroupBySource]:
-        ''' Dev server only: Resolves path/ -> path/index.html '''
-        if isinstance(node, Record):
-            rv = self._resolver.get(build_url([node.url_path] + pieces))
-            if rv:
-                return GroupBySource(node, group=rv[0], config=rv[1])
-        return None
-
-    def resolve_virtual_path(self, node: SourceObject, pieces: List[str]) \
-            -> Optional[GroupBySource]:
-        ''' Admin UI only: Prevent server error and null-redirect. '''
-        if isinstance(node, Record) and len(pieces) >= 2:
-            path = node['_path']  # type: str
-            key, grp, *_ = pieces
-            for group, conf in self._resolver.values():
-                if key == conf.key and path == conf.root:
-                    if conf.slugify(group) == grp:
-                        return GroupBySource(node, group, conf)
-        return None
