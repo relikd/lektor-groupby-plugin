@@ -5,7 +5,7 @@ with open('README.md') as fp:
 
 setup(
     name='lektor-groupby',
-    py_modules=['lektor_groupby'],
+    packages=['lektor_groupby'],
     entry_points={
         'lektor.plugins': [
             'groupby = lektor_groupby:GroupByPlugin',

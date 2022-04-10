@@ -42,8 +42,8 @@ class GroupByPlugin(Plugin):
             def _fn(args: GroupByCallbackArgs) -> Iterator[str]:
                 val = args.field
                 if isinstance(val, str):
-                    val = val.split(split) if split else [val]  # make list
-                if isinstance(val, list):
+                    val = map(str.strip, val.split(split)) if split else [val]
+                if isinstance(val, (list, map)):
                     yield from val
 
     def on_before_build_all(self, builder: Builder, **extra: object) -> None:

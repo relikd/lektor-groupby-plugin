@@ -150,7 +150,7 @@ class Watcher:
                 while True:
                     if not isinstance(obj, (str, tuple)):
                         raise TypeError(f'Unsupported groupby yield: {obj}')
-                    slug = self._persist(record, obj)
+                    slug = self._persist(record, key, obj)
                     # return slugified group key and continue iteration
                     if isinstance(_gen, Generator) and not _gen.gi_yieldfrom:
                         obj = _gen.send(slug)
@@ -159,7 +159,12 @@ class Watcher:
             except StopIteration:
                 del _gen
 
-    def _persist(self, record: Record, obj: Union[str, tuple]) -> str:
+    def _persist(
+        self,
+        record: Record,
+        key: FieldKeyPath,
+        obj: Union[str, tuple]
+    ) -> str:
         group = obj if isinstance(obj, str) else obj[0]
         slug = self.config.slugify(group)
         # init group-key
@@ -174,6 +179,8 @@ class Watcher:
         # (optional) append extra
         if isinstance(obj, tuple):
             self._state[slug][record].append(obj[1])
+        else:
+            self._state[slug][record].append(key.flowKey or key.fieldKey)
         return slug
 
     def iter_sources(self, root: Record) -> Iterator[GroupBySource]:

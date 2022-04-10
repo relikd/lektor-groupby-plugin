@@ -121,7 +121,7 @@ class GroupBySource(VirtualSourceObject):
 
     def __lt__(self, other: 'GroupBySource') -> bool:
         # Used for |sort filter ("group" is the provided original string)
-        return self.group < other.group
+        return self.group.lower() < other.group.lower()
 
     def __eq__(self, other: object) -> bool:
         # Used for |unique filter
