@@ -1,7 +1,6 @@
 from lektor.reporter import reporter, style
 
-from typing import List
-from itertools import groupby
+from typing import List, Dict
 
 
 def report_config_error(key: str, field: str, val: str, e: Exception) -> None:
@@ -19,9 +18,11 @@ def most_used_key(keys: List[str]) -> str:
         return keys[0]  # TODO: first vs last occurrence
     best_count = 0
     best_key = ''
-    for key, itr in groupby(keys):
-        count = sum(1 for i in itr)
-        if count > best_count:  # TODO: (>) vs (>=), first vs last occurrence
-            best_count = count
-            best_key = key
+    tmp = {}  # type: Dict[str, int]
+    for k in keys:
+        num = (tmp[k] + 1) if k in tmp else 1
+        tmp[k] = num
+        if num > best_count:  # TODO: (>) vs (>=), first vs last occurrence
+            best_count = num
+            best_key = k
     return best_key
