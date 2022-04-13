@@ -1,5 +1,5 @@
 .DS_Store
-/dist-env/
+/env-publish/
 
 __pycache__/
 *.py[cod]
