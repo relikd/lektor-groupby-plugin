@@ -1,21 +1,16 @@
-.PHONY: help
-help:
-	@echo 'commands:'
-	@echo '  dist'
-
-dist-env:
-	@echo Creating virtual environment...
-	@python3 -m venv 'dist-env'
-	@source dist-env/bin/activate && pip install twine
-
-.PHONY: dist
-dist: dist-env
-	[ -z "$${VIRTUAL_ENV}" ]  # you can not do this inside a virtual environment.
-	rm -rf dist
+dist: setup.py lektor_groupby/*
 	@echo Building...
 	python3 setup.py sdist bdist_wheel
-	@echo
 	rm -rf ./*.egg-info/ ./build/ MANIFEST
+
+env-publish:
+	@echo Creating virtual environment...
+	@python3 -m venv 'env-publish'
+	@source env-publish/bin/activate && pip install twine
+
+.PHONY: publish
+publish: dist env-publish
+	[ -z "$${VIRTUAL_ENV}" ]  # you can not do this inside a virtual environment.
 	@echo Publishing...
-	@echo "\033[0;31mEnter your PyPI token:\033[0m"
-	@source dist-env/bin/activate && export TWINE_USERNAME='__token__' && twine upload dist/*
+	@echo "\033[0;31mEnter PyPI token in password prompt:\033[0m"
+	@source env-publish/bin/activate && export TWINE_USERNAME='__token__' && twine upload dist/*
