@@ -44,7 +44,7 @@ class GroupBy:
             return
         # initialize remaining (enabled) watchers
         for w in self._watcher:
-            w.initialize(builder.pad.db)
+            w.initialize(builder.pad)
         # iterate over whole build tree
         queue = builder.pad.get_all_roots()  # type: List[SourceObject]
         while queue:

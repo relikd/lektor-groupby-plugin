@@ -1,10 +1,10 @@
 from typing import TYPE_CHECKING, Dict, List, Tuple, Any, Union, NamedTuple
 from typing import Optional, Callable, Iterator, Generator
+from .backref import VGroups
 from .model import ModelReader
-from .util import most_used_key
 from .vobj import GroupBySource
 if TYPE_CHECKING:
-    from lektor.db import Database, Record
+    from lektor.db import Pad, Record
     from .config import Config
     from .model import FieldKeyPath
 
@@ -44,12 +44,12 @@ class Watcher:
             self.callback = fn
         return _decorator
 
-    def initialize(self, db: 'Database') -> None:
+    def initialize(self, pad: 'Pad') -> None:
         ''' Reset internal state. You must initialize before each build! '''
         assert callable(self.callback), 'No grouping callback provided.'
-        self._model_reader = ModelReader(db, self.config.key, self.flatten)
-        self._state = {}  # type: Dict[str, Dict[Record, List[Any]]]
-        self._group_map = {}  # type: Dict[str, List[str]]
+        self._model_reader = ModelReader(pad.db, self.config.key, self.flatten)
+        self._root_record = pad.get(self._root)  # type: Record
+        self._state = {}  # type: Dict[str, GroupBySource]
 
     def should_process(self, node: 'Record') -> bool:
         ''' Check if record path is being watched. '''
@@ -77,39 +77,34 @@ class Watcher:
                 del _gen
 
     def _persist(
-        self,
-        record: 'Record',
-        key: 'FieldKeyPath',
-        obj: Union[str, tuple]
+        self, record: 'Record', key: 'FieldKeyPath', obj: Union[str, tuple]
     ) -> str:
         ''' Update internal state. Return slugified string. '''
-        group = obj if isinstance(obj, str) else obj[0]
-        slug = self.config.slugify(group)
-        # init group-key
-        if slug not in self._state:
-            self._state[slug] = {}
-            self._group_map[slug] = []
-        # _group_map is later used to find most used group
-        self._group_map[slug].append(group)
-        # init group extras
-        if record not in self._state[slug]:
-            self._state[slug][record] = []
-        # append extras (or default value)
-        if isinstance(obj, tuple):
-            self._state[slug][record].append(obj[1])
+        if isinstance(obj, str):
+            group, extra = obj, key.fieldKey
         else:
-            self._state[slug][record].append(key.fieldKey)
+            group, extra = obj
+
+        slug = self.config.slugify(group)
+        if slug not in self._state:
+            src = GroupBySource(self._root_record, slug)
+            self._state[slug] = src
+        else:
+            src = self._state[slug]
+
+        src.append_child(record, extra, group)
+        # reverse reference
+        VGroups.of(record).add(key, src)
         return slug
 
     def iter_sources(self, root: 'Record') -> Iterator[GroupBySource]:
         ''' Prepare and yield GroupBySource elements. '''
-        for key, children in self._state.items():
-            group = most_used_key(self._group_map[key])
-            yield GroupBySource(root, group, self.config, children=children)
+        for vobj in self._state.values():
+            yield vobj.finalize(self.config)
         # cleanup. remove this code if you'd like to iter twice
         del self._model_reader
+        del self._root_record
         del self._state
-        del self._group_map
 
     def __repr__(self) -> str:
         return '<GroupByWatcher key="{}" enabled={} callback={}>'.format(

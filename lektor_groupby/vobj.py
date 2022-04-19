@@ -4,8 +4,7 @@ from lektor.environment import Expression
 from lektor.sourceobj import VirtualSourceObject  # subclass
 from lektor.utils import build_url
 from typing import TYPE_CHECKING, Dict, List, Any, Optional, Iterator
-from .backref import VGroups
-from .util import report_config_error
+from .util import report_config_error, most_used_key
 if TYPE_CHECKING:
     from lektor.builder import Artifact
     from lektor.db import Record
@@ -25,18 +24,29 @@ class GroupBySource(VirtualSourceObject):
     Attributes: record, key, group, slug, children, config
     '''
 
-    def __init__(
-        self,
-        record: 'Record',
-        group: str,
-        config: 'Config',
-        children: Optional[Dict['Record', List[Any]]] = None,
-    ) -> None:
+    def __init__(self, record: 'Record', slug: str) -> None:
         super().__init__(record)
-        self.key = config.slugify(group)
-        self.group = group
+        self.key = slug
+        self._group_map = []  # type: List[str]
+        self._children = {}  # type: Dict[Record, List[Any]]
+
+    def append_child(self, child: 'Record', extra: Any, group: str) -> None:
+        if child not in self._children:
+            self._children[child] = [extra]
+        else:
+            self._children[child].append(extra)
+        # _group_map is later used to find most used group
+        self._group_map.append(group)
+
+    # -------------------------
+    #   Evaluate Extra Fields
+    # -------------------------
+
+    def finalize(self, config: 'Config', group: Optional[str] = None) \
+            -> 'GroupBySource':
         self.config = config
-        self._children = children or {}  # type: Dict[Record, List[Any]]
+        self.group = group or most_used_key(self._group_map)
+        del self._group_map
         # evaluate slug Expression
         if config.slug and '{key}' in config.slug:
             self.slug = config.slug.replace('{key}', self.key)
@@ -48,9 +58,7 @@ class GroupBySource(VirtualSourceObject):
         # extra fields
         for attr, expr in config.fields.items():
             setattr(self, attr, self._eval(expr, field='fields.' + attr))
-        # back-ref
-        for child in self._children:
-            VGroups.of(child).add(self)
+        return self
 
     def _eval(self, value: Any, *, field: str) -> Any:
         ''' Internal only: evaluates Lektor config file field expression. '''

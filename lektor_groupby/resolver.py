@@ -15,7 +15,7 @@ class Resolver:
     '''
 
     def __init__(self, env: 'Environment') -> None:
-        self._data = {}  # type: Dict[str, Tuple[str, Config]]
+        self._data = {}  # type: Dict[str, Tuple[str, str, Config]]
         env.urlresolver(self.resolve_server_path)
         env.virtualpathresolver(VPATH.lstrip('@'))(self.resolve_virtual_path)
 
@@ -34,7 +34,7 @@ class Resolver:
     def add(self, vobj: GroupBySource) -> None:
         ''' Track new virtual object (only if slug is set). '''
         if vobj.slug:
-            self._data[vobj.url_path] = (vobj.group, vobj.config)
+            self._data[vobj.url_path] = (vobj.key, vobj.group, vobj.config)
 
     # ------------
     #   Resolver
@@ -46,7 +46,7 @@ class Resolver:
         if isinstance(node, Record):
             rv = self._data.get(build_url([node.url_path] + pieces))
             if rv:
-                return GroupBySource(node, group=rv[0], config=rv[1])
+                return GroupBySource(node, rv[0]).finalize(rv[2], rv[1])
         return None
 
     def resolve_virtual_path(self, node: 'SourceObject', pieces: List[str]) \
@@ -54,9 +54,8 @@ class Resolver:
         ''' Admin UI only: Prevent server error and null-redirect. '''
         if isinstance(node, Record) and len(pieces) >= 2:
             path = node['_path']  # type: str
-            key, grp, *_ = pieces
-            for group, conf in self._data.values():
-                if key == conf.key and path == conf.root:
-                    if conf.slugify(group) == grp:
-                        return GroupBySource(node, group, conf)
+            attr, grp, *_ = pieces
+            for slug, group, conf in self._data.values():
+                if attr == conf.key and slug == grp and path == conf.root:
+                    return GroupBySource(node, slug).finalize(conf, group)
         return None
