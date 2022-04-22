@@ -13,7 +13,7 @@ setup(
     },
     author='relikd',
     url='https://github.com/relikd/lektor-groupby-plugin',
-    version='0.9.6',
+    version='0.9.7',
     description='Cluster arbitrary records with field attribute keyword.',
     long_description=longdesc,
     long_description_content_type="text/markdown",

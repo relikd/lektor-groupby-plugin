@@ -279,11 +279,14 @@ This is useful if you do not want to create subpages but rather an index page co
 This can be done in combination with the next use-case:
 
 ```jinja2
-{%- for x in this|vgroups('TestA', 'TestB', recursive=True)|unique|sort %} 
+{%- for x in this|vgroups(keys=['TestA', 'TestB'], fields=[], flows=[], recursive=True)|unique|sort %} 
 <a href="{{ x|url }}">({{ x.group }})</a>
 {%- endfor %} 
 ```
 
 You can query the groups of any parent node (including those without slug).
+[`templates/page.html`](./templates/page.html) uses this.
 The keys (`'TestA', 'TestB'`) can be omitted which will return all groups of all attributes (you can still filter them with `x.config.key == 'TestC'`).
-Refer to [`templates/page.html`](./templates/page.html) for usage.
+The `fields` and `flows` params are also optional.
+With these you can match groups in `args.key.fieldKey` and `args.key.flowKey`.
+For example, if you have a “tags” field and an “additional-tags” field and you only want to show one in a preview.

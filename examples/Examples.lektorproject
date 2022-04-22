@@ -2,4 +2,4 @@
 name = GroupBy Examples
 
 [packages]
-lektor-groupby = 0.9.6
+lektor-groupby = 0.9.7
