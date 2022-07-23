@@ -48,8 +48,11 @@ class Watcher:
         ''' Reset internal state. You must initialize before each build! '''
         assert callable(self.callback), 'No grouping callback provided.'
         self._model_reader = ModelReader(pad.db, self.config.key, self.flatten)
-        self._root_record = pad.get(self._root)  # type: Record
-        self._state = {}  # type: Dict[str, GroupBySource]
+        self._root_record = {}  # type: Dict[str, Record]
+        self._state = {}  # type: Dict[str, Dict[str, GroupBySource]]
+        for alt in pad.config.iter_alternatives():
+            self._root_record[alt] = pad.get(self._root, alt=alt)
+            self._state[alt] = {}
 
     def should_process(self, node: 'Record') -> bool:
         ''' Check if record path is being watched. '''
@@ -85,12 +88,13 @@ class Watcher:
         else:
             group, extra = obj
 
+        alt = record.alt
         slug = self.config.slugify(group)
-        if slug not in self._state:
-            src = GroupBySource(self._root_record, slug)
-            self._state[slug] = src
+        if slug not in self._state[alt]:
+            src = GroupBySource(self._root_record[alt], slug)
+            self._state[alt][slug] = src
         else:
-            src = self._state[slug]
+            src = self._state[alt][slug]
 
         src.append_child(record, extra, group)
         # reverse reference
@@ -99,8 +103,9 @@ class Watcher:
 
     def iter_sources(self, root: 'Record') -> Iterator[GroupBySource]:
         ''' Prepare and yield GroupBySource elements. '''
-        for vobj in self._state.values():
-            yield vobj.finalize(self.config)
+        for vobj_list in self._state.values():
+            for vobj in vobj_list.values():
+                yield vobj.finalize(self.config)
         # cleanup. remove this code if you'd like to iter twice
         del self._model_reader
         del self._root_record

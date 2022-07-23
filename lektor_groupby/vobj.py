@@ -84,7 +84,7 @@ class GroupBySource(VirtualSourceObject):
     @property
     def url_path(self) -> str:
         # Actual path to resource as seen by the browser
-        return build_url([self.record.path, self.slug])  # slug can be None!
+        return build_url([self.record.url_path, self.slug])  # slug can be None
 
     def iter_source_filenames(self) -> Iterator[str]:
         ''' Enumerate all dependencies '''
