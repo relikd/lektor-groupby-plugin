@@ -1,9 +1,10 @@
 from lektor.build_programs import BuildProgram  # subclass
 from lektor.context import get_ctx
+from lektor.db import _CmpHelper
 from lektor.environment import Expression
 from lektor.sourceobj import VirtualSourceObject  # subclass
 from lektor.utils import build_url
-from typing import TYPE_CHECKING, Dict, List, Any, Optional, Iterator
+from typing import TYPE_CHECKING, Dict, List, Any, Optional, Iterator, Iterable
 from .util import report_config_error, most_used_key
 if TYPE_CHECKING:
     from lektor.builder import Artifact
@@ -92,6 +93,15 @@ class GroupBySource(VirtualSourceObject):
             yield from self.config.dependencies
         for record in self._children:
             yield from record.iter_source_filenames()
+
+    def get_sort_key(self, fields: Iterable[str]) -> List:
+        def cmp_val(field: str) -> Any:
+            reverse = field.startswith('-')
+            if reverse or field.startswith('+'):
+                field = field[1:]
+            return _CmpHelper(getattr(self, field, None), reverse)
+
+        return [cmp_val(field) for field in fields]
 
     # -----------------------
     #   Properties & Helper

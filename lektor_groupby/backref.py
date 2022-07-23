@@ -1,5 +1,5 @@
 from lektor.context import get_ctx
-from typing import TYPE_CHECKING, Union, Iterable, Iterator
+from typing import TYPE_CHECKING, Union, Iterable, Iterator, Optional
 import weakref
 if TYPE_CHECKING:
     from lektor.builder import Builder
@@ -47,7 +47,8 @@ class VGroups:
         *,
         fields: Union[str, Iterable[str], None] = None,
         flows: Union[str, Iterable[str], None] = None,
-        recursive: bool = False
+        recursive: bool = False,
+        order_by: Optional[str] = None,
     ) -> Iterator['GroupBySource']:
         ''' Extract all referencing groupby virtual objects from a page. '''
         ctx = get_ctx()
@@ -69,6 +70,7 @@ class VGroups:
             flows = [flows]
         # find groups
         proc_list = [record]
+        done_list = set()
         while proc_list:
             page = proc_list.pop(0)
             if recursive and hasattr(page, 'children'):
@@ -80,4 +82,10 @@ class VGroups:
                     continue
                 if keys and vobj().config.key not in keys:
                     continue
-                yield vobj()
+                done_list.add(vobj())
+
+        if order_by:
+            order = order_by.split(',')
+            yield from sorted(done_list, key=lambda x: x.get_sort_key(order))
+        else:
+            yield from done_list
