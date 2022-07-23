@@ -22,6 +22,11 @@ class GroupBy:
         self._watcher = []  # type: List[Watcher]
         self._results = []  # type: List[GroupBySource]
         self.resolver = resolver
+        self.didBuild = False
+
+    @property
+    def isNew(self) -> bool:
+        return not self.didBuild
 
     def add_watcher(self, key: str, config: 'AnyConfig') -> Watcher:
         ''' Init Config and add to watch list. '''
@@ -60,6 +65,7 @@ class GroupBy:
 
     def make_once(self, builder: 'Builder') -> None:
         ''' Perform groupby, iter over sources with watcher callback. '''
+        self.didBuild = True
         if self._watcher:
             self.resolver.reset()
             for w in self._watcher:
