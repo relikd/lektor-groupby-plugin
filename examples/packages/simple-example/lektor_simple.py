@@ -20,7 +20,7 @@ class SimpleGroupByPlugin(Plugin):
             # Yield groups
             value = args.field  # type: list # since model is 'strings' type
             for tag in value:
-                yield tag, {'tags_in_page': value}
+                yield tag
             # Everything below is just for documentation purposes
             page = args.record  # extract additional info from source
             fieldKey, flowIndex, flowKey = args.key  # or get field index
