@@ -66,28 +66,22 @@ class Watcher:
         for key, field in self._model_reader.read(record):
             _gen = self.callback(GroupByCallbackArgs(record, key, field))
             try:
-                obj = next(_gen)
+                group = next(_gen)
                 while True:
-                    if not isinstance(obj, (str, tuple)):
-                        raise TypeError(f'Unsupported groupby yield: {obj}')
-                    slug = self._persist(record, key, obj)
+                    if not isinstance(group, str):
+                        raise TypeError(f'Unsupported groupby yield: {group}')
+                    slug = self._persist(record, key, group)
                     # return slugified group key and continue iteration
                     if isinstance(_gen, Generator) and not _gen.gi_yieldfrom:
-                        obj = _gen.send(slug)
+                        group = _gen.send(slug)
                     else:
-                        obj = next(_gen)
+                        group = next(_gen)
             except StopIteration:
                 del _gen
 
-    def _persist(
-        self, record: 'Record', key: 'FieldKeyPath', obj: Union[str, tuple]
-    ) -> str:
+    def _persist(self, record: 'Record', key: 'FieldKeyPath', group: str) \
+            -> str:
         ''' Update internal state. Return slugified string. '''
-        if isinstance(obj, str):
-            group, extra = obj, key.fieldKey
-        else:
-            group, extra = obj
-
         alt = record.alt
         slug = self.config.slugify(group)
         if slug not in self._state[alt]:
@@ -96,7 +90,7 @@ class Watcher:
         else:
             src = self._state[alt][slug]
 
-        src.append_child(record, extra, group)
+        src.append_child(record, group)
         # reverse reference
         VGroups.of(record).add(key, src)
         return slug

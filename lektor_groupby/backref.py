@@ -1,6 +1,7 @@
 from lektor.context import get_ctx
 from typing import TYPE_CHECKING, Union, Iterable, Iterator, Optional
 import weakref
+from .util import split_strip
 if TYPE_CHECKING:
     from lektor.builder import Builder
     from lektor.db import Record
@@ -48,7 +49,7 @@ class VGroups:
         fields: Union[str, Iterable[str], None] = None,
         flows: Union[str, Iterable[str], None] = None,
         recursive: bool = False,
-        order_by: Optional[str] = None,
+        order_by: Union[str, Iterable[str], None] = None,
     ) -> Iterator['GroupBySource']:
         ''' Extract all referencing groupby virtual objects from a page. '''
         ctx = get_ctx()
@@ -85,7 +86,13 @@ class VGroups:
                 done_list.add(vobj())
 
         if order_by:
-            order = order_by.split(',')
+            if isinstance(order_by, str):
+                order = split_strip(order_by, ',')
+            elif isinstance(order_by, (list, tuple)):
+                order = order_by
+            else:
+                raise TypeError('order_by must be either str or list type.')
+            # using get_sort_key() of GroupBySource
             yield from sorted(done_list, key=lambda x: x.get_sort_key(order))
         else:
             yield from done_list

@@ -1,7 +1,8 @@
 from inifile import IniFile
 from lektor.utils import slugify
+from .util import split_strip
 
-from typing import Set, Dict, Optional, Union, Any
+from typing import Set, Dict, Optional, Union, Any, List
 
 AnyConfig = Union['Config', IniFile, Dict]
 
@@ -31,6 +32,7 @@ class Config:
         self.dependencies = set()  # type: Set[str]
         self.fields = {}  # type: Dict[str, Any]
         self.key_map = {}  # type: Dict[str, str]
+        self.order_by = None  # type: Optional[List[str]]
 
     def slugify(self, k: str) -> str:
         ''' key_map replace and slugify. '''
@@ -47,6 +49,10 @@ class Config:
     def set_key_map(self, key_map: Optional[Dict[str, str]]) -> None:
         ''' This mapping replaces group keys before slugify. '''
         self.key_map = key_map or {}
+
+    def set_order_by(self, order_by: Optional[str]) -> None:
+        ''' If specified, children will be sorted according to keys. '''
+        self.order_by = split_strip(order_by, ',') or None
 
     def __repr__(self) -> str:
         txt = '<GroupByConfig'
@@ -74,6 +80,7 @@ class Config:
         conf.dependencies.add(ini.filename)
         conf.set_fields(ini.section_as_dict(key + '.fields'))
         conf.set_key_map(ini.section_as_dict(key + '.key_map'))
+        conf.set_order_by(ini.get(key + '.children.order_by', None))
         return conf
 
     @staticmethod

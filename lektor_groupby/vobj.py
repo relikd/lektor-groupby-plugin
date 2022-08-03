@@ -4,7 +4,7 @@ from lektor.db import _CmpHelper
 from lektor.environment import Expression
 from lektor.sourceobj import VirtualSourceObject  # subclass
 from lektor.utils import build_url
-from typing import TYPE_CHECKING, Dict, List, Any, Optional, Iterator, Iterable
+from typing import TYPE_CHECKING, List, Any, Optional, Iterator, Iterable
 from .util import report_config_error, most_used_key
 if TYPE_CHECKING:
     from lektor.builder import Artifact
@@ -29,13 +29,11 @@ class GroupBySource(VirtualSourceObject):
         super().__init__(record)
         self.key = slug
         self._group_map = []  # type: List[str]
-        self._children = {}  # type: Dict[Record, List[Any]]
+        self._children = []  # type: List[Record]
 
-    def append_child(self, child: 'Record', extra: Any, group: str) -> None:
+    def append_child(self, child: 'Record', group: str) -> None:
         if child not in self._children:
-            self._children[child] = [extra]
-        else:
-            self._children[child].append(extra)
+            self._children.append(child)
         # _group_map is later used to find most used group
         self._group_map.append(group)
 
@@ -59,6 +57,10 @@ class GroupBySource(VirtualSourceObject):
         # extra fields
         for attr, expr in config.fields.items():
             setattr(self, attr, self._eval(expr, field='fields.' + attr))
+        # sort children
+        if config.order_by:
+            # using get_sort_key() of Record
+            self._children.sort(key=lambda x: x.get_sort_key(config.order_by))
         return self
 
     def _eval(self, value: Any, *, field: str) -> Any:
@@ -94,6 +96,25 @@ class GroupBySource(VirtualSourceObject):
         for record in self._children:
             yield from record.iter_source_filenames()
 
+    # def get_checksum(self, path_cache: 'PathCache') -> Optional[str]:
+    #     deps = [self.pad.env.jinja_env.get_or_select_template(
+    #         self.config.template).filename]
+    #     deps.extend(self.iter_source_filenames())
+    #     sums = '|'.join(path_cache.get_file_info(x).filename_and_checksum
+    #                     for x in deps if x) + str(len(self._children))
+    #     return hashlib.sha1(sums.encode('utf-8')).hexdigest() if sums else None
+
+    # @property
+    # def pagination(self):
+    #     print('pagination')
+    #     return None
+
+    # def __for_page__(self, page_num):
+    #     """Get source object for a (possibly) different page number.
+    #     """
+    #     print('for page', page_num)
+    #     return self
+
     def get_sort_key(self, fields: Iterable[str]) -> List:
         def cmp_val(field: str) -> Any:
             reverse = field.startswith('-')
@@ -101,14 +122,14 @@ class GroupBySource(VirtualSourceObject):
                 field = field[1:]
             return _CmpHelper(getattr(self, field, None), reverse)
 
-        return [cmp_val(field) for field in fields]
+        return [cmp_val(field) for field in fields or []]
 
     # -----------------------
     #   Properties & Helper
     # -----------------------
 
     @property
-    def children(self) -> Dict['Record', List[Any]]:
+    def children(self) -> List['Record']:
         ''' Returns dict with page record key and (optional) extra value. '''
         return self._children
 
@@ -118,14 +139,6 @@ class GroupBySource(VirtualSourceObject):
         if self._children:
             return iter(self._children).__next__()
         return None
-
-    @property
-    def first_extra(self) -> Optional[Any]:
-        ''' Returns first additional / extra info object of first page. '''
-        if not self._children:
-            return None
-        val = iter(self._children.values()).__next__()
-        return val[0] if val else None
 
     def __getitem__(self, key: str) -> Any:
         # Used for virtual path resolver

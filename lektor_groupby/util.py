@@ -14,6 +14,7 @@ def report_config_error(key: str, field: str, val: str, e: Exception) -> None:
 
 
 def most_used_key(keys: List[str]) -> str:
+    ''' Find string with most occurrences. '''
     if len(keys) < 3:
         return keys[0]  # TODO: first vs last occurrence
     best_count = 0
@@ -26,3 +27,13 @@ def most_used_key(keys: List[str]) -> str:
             best_count = num
             best_key = k
     return best_key
+
+
+def split_strip(data: str, delimiter: str = ',') -> List[str]:
+    ''' Split by delimiter and strip each str separately. Omit if empty. '''
+    ret = []
+    for x in (data or '').split(delimiter):
+        x = x.strip()
+        if x:
+            ret.append(x)
+    return ret
