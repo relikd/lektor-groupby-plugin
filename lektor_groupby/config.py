@@ -52,13 +52,15 @@ class Config:
 
     def set_order_by(self, order_by: Optional[str]) -> None:
         ''' If specified, children will be sorted according to keys. '''
-        self.order_by = split_strip(order_by, ',') or None
+        self.order_by = split_strip(order_by or '', ',') or None
 
     def __repr__(self) -> str:
         txt = '<GroupByConfig'
         for x in ['key', 'root', 'slug', 'template', 'enabled']:
             txt += ' {}="{}"'.format(x, getattr(self, x))
         txt += f' fields="{", ".join(self.fields)}"'
+        if self.order_by:
+            txt += ' order_by="{}"'.format(' ,'.join(self.order_by))
         return txt + '>'
 
     @staticmethod

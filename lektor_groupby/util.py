@@ -32,7 +32,7 @@ def most_used_key(keys: List[str]) -> str:
 def split_strip(data: str, delimiter: str = ',') -> List[str]:
     ''' Split by delimiter and strip each str separately. Omit if empty. '''
     ret = []
-    for x in (data or '').split(delimiter):
+    for x in data.split(delimiter):
         x = x.strip()
         if x:
             ret.append(x)
