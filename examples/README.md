@@ -104,7 +104,7 @@ The built-in field attributes are:
 - `key`: slugified group value, e.g., "a-title"
 - `slug`: url path after root node, e.g. "config/a-title.html" (can be `None`)
 - `record`: parent node, e.g., `Page(path="/")`
-- `children`: the elements of the grouping (`Record` type)
+- `children`: the elements of the grouping (a `Query` of `Record` type)
 - `config`: configuration object (see below)
 
 Without any changes, the `key` value will just be `slugify(group)`.

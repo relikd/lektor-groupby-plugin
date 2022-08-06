@@ -4,7 +4,9 @@ from lektor.db import _CmpHelper
 from lektor.environment import Expression
 from lektor.sourceobj import VirtualSourceObject  # subclass
 from lektor.utils import build_url
+
 from typing import TYPE_CHECKING, List, Any, Optional, Iterator, Iterable
+from .query import FixedRecordsQuery
 from .util import report_config_error, most_used_key
 if TYPE_CHECKING:
     from lektor.builder import Artifact
@@ -28,14 +30,14 @@ class GroupBySource(VirtualSourceObject):
     def __init__(self, record: 'Record', slug: str) -> None:
         super().__init__(record)
         self.key = slug
-        self._group_map = []  # type: List[str]
-        self._children = []  # type: List[Record]
+        self.__children = []  # type: List[str]
+        self.__group_map = []  # type: List[str]
 
     def append_child(self, child: 'Record', group: str) -> None:
-        if child not in self._children:
-            self._children.append(child)
-        # _group_map is later used to find most used group
-        self._group_map.append(group)
+        if child not in self.__children:
+            self.__children.append(child.path)
+        # __group_map is later used to find most used group
+        self.__group_map.append(group)
 
     # -------------------------
     #   Evaluate Extra Fields
@@ -44,8 +46,14 @@ class GroupBySource(VirtualSourceObject):
     def finalize(self, config: 'Config', group: Optional[str] = None) \
             -> 'GroupBySource':
         self.config = config
-        self.group = group or most_used_key(self._group_map)
-        del self._group_map
+        # make a sorted children query
+        self._children = FixedRecordsQuery(self.pad, self.__children, self.alt)
+        self._children._order_by = config.order_by
+        # set group name
+        self.group = group or most_used_key(self.__group_map)
+        # cleanup temporary data
+        del self.__children
+        del self.__group_map
         # evaluate slug Expression
         if config.slug and '{key}' in config.slug:
             self.slug = config.slug.replace('{key}', self.key)
@@ -57,10 +65,6 @@ class GroupBySource(VirtualSourceObject):
         # extra fields
         for attr, expr in config.fields.items():
             setattr(self, attr, self._eval(expr, field='fields.' + attr))
-        # sort children
-        if config.order_by:
-            # using get_sort_key() of Record
-            self._children.sort(key=lambda x: x.get_sort_key(config.order_by))
         return self
 
     def _eval(self, value: Any, *, field: str) -> Any:
@@ -93,7 +97,7 @@ class GroupBySource(VirtualSourceObject):
         ''' Enumerate all dependencies '''
         if self.config.dependencies:
             yield from self.config.dependencies
-        for record in self._children:
+        for record in self.children:
             yield from record.iter_source_filenames()
 
     # def get_checksum(self, path_cache: 'PathCache') -> Optional[str]:
@@ -101,19 +105,8 @@ class GroupBySource(VirtualSourceObject):
     #         self.config.template).filename]
     #     deps.extend(self.iter_source_filenames())
     #     sums = '|'.join(path_cache.get_file_info(x).filename_and_checksum
-    #                     for x in deps if x) + str(len(self._children))
+    #                     for x in deps if x) + str(self.children.count())
     #     return hashlib.sha1(sums.encode('utf-8')).hexdigest() if sums else None
-
-    # @property
-    # def pagination(self):
-    #     print('pagination')
-    #     return None
-
-    # def __for_page__(self, page_num):
-    #     """Get source object for a (possibly) different page number.
-    #     """
-    #     print('for page', page_num)
-    #     return self
 
     def get_sort_key(self, fields: Iterable[str]) -> List:
         def cmp_val(field: str) -> Any:
@@ -129,16 +122,9 @@ class GroupBySource(VirtualSourceObject):
     # -----------------------
 
     @property
-    def children(self) -> List['Record']:
-        ''' Returns dict with page record key and (optional) extra value. '''
+    def children(self) -> FixedRecordsQuery:
+        ''' Return query of children of type Record. '''
         return self._children
-
-    @property
-    def first_child(self) -> Optional['Record']:
-        ''' Returns first referencing page record. '''
-        if self._children:
-            return iter(self._children).__next__()
-        return None
 
     def __getitem__(self, key: str) -> Any:
         # Used for virtual path resolver
@@ -163,7 +149,7 @@ class GroupBySource(VirtualSourceObject):
 
     def __repr__(self) -> str:
         return '<GroupBySource path="{}" children={}>'.format(
-            self.path, len(self._children))
+            self.path, self.children.count())
 
 
 # -----------------------------------

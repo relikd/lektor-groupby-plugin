@@ -1,4 +1,4 @@
 <h2>Path: {{ this | url(absolute=True) }}</h2>
 <p>This is: {{this}}</p>
 <p>Custom field, desc: "{{this.desc}}"</p>
-<p>Children: {{this.children}}</p>
+<p>Children: {{this.children.all()}}</p>
