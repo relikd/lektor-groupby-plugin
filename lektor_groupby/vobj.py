@@ -55,6 +55,7 @@ class GroupBySource(VirtualSourceObject):
         del self.__children
         del self.__group_map
         # evaluate slug Expression
+        self.slug = None  # type: Optional[str]
         if config.slug and '{key}' in config.slug:
             self.slug = config.slug.replace('{key}', self.key)
         else:
