@@ -16,7 +16,7 @@ def report_config_error(key: str, field: str, val: str, e: Exception) -> None:
 def most_used_key(keys: List[str]) -> str:
     ''' Find string with most occurrences. '''
     if len(keys) < 3:
-        return keys[0]  # TODO: first vs last occurrence
+        return keys[0] if keys else ''  # TODO: first vs last occurrence
     best_count = 0
     best_key = ''
     tmp = {}  # type: Dict[str, int]
