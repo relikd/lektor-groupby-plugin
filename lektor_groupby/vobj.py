@@ -3,12 +3,16 @@ from lektor.context import get_ctx
 from lektor.db import _CmpHelper
 from lektor.environment import Expression
 from lektor.sourceobj import VirtualSourceObject  # subclass
-from lektor.utils import build_url
+from werkzeug.utils import cached_property
 
 from typing import TYPE_CHECKING, List, Any, Optional, Iterator, Iterable
+from .pagination import PaginationConfig
 from .query import FixedRecordsQuery
-from .util import report_config_error, most_used_key
+from .util import (
+    report_config_error, most_used_key, insert_before_ext, build_url
+)
 if TYPE_CHECKING:
+    from lektor.pagination import Pagination
     from lektor.builder import Artifact
     from lektor.db import Record
     from .config import Config
@@ -27,9 +31,15 @@ class GroupBySource(VirtualSourceObject):
     Attributes: record, key, group, slug, children, config
     '''
 
-    def __init__(self, record: 'Record', slug: str) -> None:
+    def __init__(
+        self,
+        record: 'Record',
+        slug: str,
+        page_num: Optional[int] = None
+    ) -> None:
         super().__init__(record)
         self.key = slug
+        self.page_num = page_num
         self.__children = []  # type: List[str]
         self.__group_map = []  # type: List[str]
 
@@ -47,8 +57,8 @@ class GroupBySource(VirtualSourceObject):
             -> 'GroupBySource':
         self.config = config
         # make a sorted children query
-        self._children = FixedRecordsQuery(self.pad, self.__children, self.alt)
-        self._children._order_by = config.order_by
+        self._query = FixedRecordsQuery(self.pad, self.__children, self.alt)
+        self._query._order_by = config.order_by
         # set group name
         self.group = group or most_used_key(self.__group_map)
         # cleanup temporary data
@@ -80,6 +90,32 @@ class GroupBySource(VirtualSourceObject):
             report_config_error(self.config.key, field, value, e)
             return Ellipsis
 
+    # -----------------------
+    #   Pagination handling
+    # -----------------------
+
+    @cached_property
+    def _pagination_config(self) -> 'PaginationConfig':
+        # Generate `PaginationConfig` once we need it
+        return PaginationConfig(self.record.pad.env, **self.config.pagination)
+
+    @cached_property
+    def pagination(self) -> 'Pagination':
+        # Generate `Pagination` once we need it
+        return self._pagination_config.get_pagination_controller(self)
+
+    def __iter_pagination_sources__(self) -> Iterator['GroupBySource']:
+        ''' If pagination enabled, yields `GroupBySourcePage` sub-pages. '''
+        # Used in GroupBy.make_once() to generated paginated child sources
+        if self._pagination_config.enabled and self.page_num is None:
+            for page_num in range(self._pagination_config.count_pages(self)):
+                yield self.__for_page__(page_num + 1)
+
+    def __for_page__(self, page_num: Optional[int]) -> 'GroupBySource':
+        ''' Get source object for a (possibly) different page number. '''
+        assert page_num is not None
+        return GroupBySourcePage(self, page_num)
+
     # ---------------------
     #   Lektor properties
     # ---------------------
@@ -87,12 +123,31 @@ class GroupBySource(VirtualSourceObject):
     @property
     def path(self) -> str:
         # Used in VirtualSourceInfo, used to prune VirtualObjects
-        return f'{self.record.path}{VPATH}/{self.config.key}/{self.key}'
+        vpath = f'{self.record.path}{VPATH}/{self.config.key}/{self.key}'
+        if self.page_num:
+            vpath += '/' + str(self.page_num)
+        return vpath
 
     @property
     def url_path(self) -> str:
         # Actual path to resource as seen by the browser
-        return build_url([self.record.url_path, self.slug])  # slug can be None
+        parts = [self.record.url_path]
+        # slug can be None!!
+        if not self.slug:
+            return build_url(parts)
+        # if pagination enabled, append pagination.url_suffix to path
+        if self.page_num and self.page_num > 1:
+            sffx = self._pagination_config.url_suffix
+            if '.' in self.slug.split('/')[-1]:
+                # default: ../slugpage2.html (use e.g.: url_suffix = .page.)
+                parts.append(insert_before_ext(
+                    self.slug, sffx + str(self.page_num), '.'))
+            else:
+                # default: ../slug/page/2/index.html
+                parts += [self.slug, sffx, self.page_num]
+        else:
+            parts.append(self.slug)
+        return build_url(parts)
 
     def iter_source_filenames(self) -> Iterator[str]:
         ''' Enumerate all dependencies '''
@@ -122,10 +177,10 @@ class GroupBySource(VirtualSourceObject):
     #   Properties & Helper
     # -----------------------
 
-    @property
+    @cached_property
     def children(self) -> FixedRecordsQuery:
         ''' Return query of children of type Record. '''
-        return self._children
+        return self._query.request_page(self.page_num)
 
     def __getitem__(self, key: str) -> Any:
         # Used for virtual path resolver
@@ -162,6 +217,9 @@ class GroupByBuildProgram(BuildProgram):
     ''' Generate Build-Artifacts and write files. '''
 
     def produce_artifacts(self) -> None:
+        pagination_enabled = self.source._pagination_config.enabled
+        if pagination_enabled and self.source.page_num is None:
+            return  # only __iter_pagination_sources__()
         url = self.source.url_path
         if url.endswith('/'):
             url += 'index.html'
@@ -172,3 +230,29 @@ class GroupByBuildProgram(BuildProgram):
         get_ctx().record_virtual_dependency(self.source)
         artifact.render_template_into(
             self.source.config.template, this=self.source)
+
+
+class GroupBySourcePage(GroupBySource):
+    ''' Pagination wrapper. Redirects get attr/item to non-paginated node. '''
+
+    def __init__(self, parent: 'GroupBySource', page_num: int) -> None:
+        self.__parent = parent
+        self.page_num = page_num
+
+    def __for_page__(self, page_num: Optional[int]) -> 'GroupBySource':
+        ''' Get source object for a (possibly) different page number. '''
+        if page_num is None:
+            return self.__parent
+        if page_num == self.page_num:
+            return self
+        return GroupBySourcePage(self.__parent, page_num)
+
+    def __getitem__(self, key: str) -> Any:
+        return self.__parent.__getitem__(key)
+
+    def __getattr__(self, key: str) -> Any:
+        return getattr(self.__parent, key)
+
+    def __repr__(self) -> str:
+        return '<GroupBySourcePage path="{}" page={}>'.format(
+            self.__parent.path, self.page_num)

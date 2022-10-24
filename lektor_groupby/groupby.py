@@ -71,8 +71,13 @@ class GroupBy:
             for w in self._watcher:
                 root = builder.pad.get(w.config.root)
                 for vobj in w.iter_sources(root):
+                    # add original source
                     self._results.append(vobj)
                     self.resolver.add(vobj)
+                    # and also add pagination sources
+                    for sub_vobj in vobj.__iter_pagination_sources__():
+                        self._results.append(sub_vobj)
+                        self.resolver.add(sub_vobj)
             self._watcher.clear()
 
     def build_all(self, builder: 'Builder') -> None:

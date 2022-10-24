@@ -37,3 +37,22 @@ def split_strip(data: str, delimiter: str = ',') -> List[str]:
         if x:
             ret.append(x)
     return ret
+
+
+def insert_before_ext(data: str, ins: str, delimiter: str = '.') -> str:
+    ''' Insert text before last index of delimeter (or at the end). '''
+    assert delimiter in data, 'Could not insert before delimiter: ' + delimiter
+    idx = data.rindex(delimiter)
+    return data[:idx] + ins + data[idx:]
+
+
+def build_url(parts: List[str]) -> str:
+    ''' Build URL similar to lektor.utils.build_url '''
+    url = ''
+    for comp in parts:
+        txt = str(comp).strip('/')
+        if txt:
+            url += '/' + txt
+    if '.' not in url.split('/')[-1]:
+        url += '/'
+    return url or '/'

@@ -32,6 +32,7 @@ class Config:
         self.dependencies = set()  # type: Set[str]
         self.fields = {}  # type: Dict[str, Any]
         self.key_map = {}  # type: Dict[str, str]
+        self.pagination = {}  # type: Dict[str, Any]
         self.order_by = None  # type: Optional[List[str]]
 
     def slugify(self, k: str) -> str:
@@ -49,6 +50,21 @@ class Config:
     def set_key_map(self, key_map: Optional[Dict[str, str]]) -> None:
         ''' This mapping replaces group keys before slugify. '''
         self.key_map = key_map or {}
+
+    def set_pagination(
+        self,
+        enabled: Optional[bool] = None,
+        per_page: Optional[int] = None,
+        url_suffix: Optional[str] = None,
+        items: Optional[str] = None,
+    ) -> None:
+        ''' Used for pagination. '''
+        self.pagination = dict(
+            enabled=enabled,
+            per_page=per_page,
+            url_suffix=url_suffix,
+            items=items,
+        )
 
     def set_order_by(self, order_by: Optional[str]) -> None:
         ''' If specified, children will be sorted according to keys. '''
@@ -82,6 +98,12 @@ class Config:
         conf.dependencies.add(ini.filename)
         conf.set_fields(ini.section_as_dict(key + '.fields'))
         conf.set_key_map(ini.section_as_dict(key + '.key_map'))
+        conf.set_pagination(
+            enabled=ini.get_bool(key + '.pagination.enabled', None),
+            per_page=ini.get_int(key + '.pagination.per_page', None),
+            url_suffix=ini.get(key + '.pagination.url_suffix'),
+            items=ini.get(key + '.pagination.items'),
+        )
         conf.set_order_by(ini.get(key + '.children.order_by', None))
         return conf
 
