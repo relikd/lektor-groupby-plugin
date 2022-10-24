@@ -150,7 +150,8 @@ class GroupBySource(VirtualSourceObject):
 
     def __repr__(self) -> str:
         return '<GroupBySource path="{}" children={}>'.format(
-            self.path, self.children.count())
+            self.path,
+            self.children.count() if hasattr(self, 'children') else '?')
 
 
 # -----------------------------------
