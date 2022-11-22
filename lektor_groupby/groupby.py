@@ -64,9 +64,6 @@ class GroupBy:
         '''
         if not self._watcher:
             return
-        # not really necessary but should improve performance of later reset()
-        if not filter_keys:
-            self.resolver.reset()
         remaining = []
         for w in self._watcher:
             # only process vobjs that are used somewhere
