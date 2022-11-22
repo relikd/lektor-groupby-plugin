@@ -48,6 +48,7 @@ class ModelReader:
         for r_key, subs in self._models.get(record.datamodel.id, {}).items():
             field = record[r_key]
             if not field:
+                yield FieldKeyPath(r_key), field
                 continue
             if subs == '*':  # either normal field or flow type (all blocks)
                 if self.flatten and isinstance(field, Flow):

@@ -1,6 +1,7 @@
 from lektor.builder import PathCache
 from lektor.db import Record  # isinstance
-from typing import TYPE_CHECKING, Set, List
+from lektor.reporter import reporter  # build
+from typing import TYPE_CHECKING, List, Optional, Iterable
 from .config import Config
 from .watcher import Watcher
 if TYPE_CHECKING:
@@ -19,14 +20,14 @@ class GroupBy:
     '''
 
     def __init__(self, resolver: 'Resolver') -> None:
+        self._building = False
         self._watcher = []  # type: List[Watcher]
         self._results = []  # type: List[GroupBySource]
         self.resolver = resolver
-        self.didBuild = False
 
     @property
-    def isNew(self) -> bool:
-        return not self.didBuild
+    def isBuilding(self) -> bool:
+        return self._building
 
     def add_watcher(self, key: str, config: 'AnyConfig') -> Watcher:
         ''' Init Config and add to watch list. '''
@@ -34,15 +35,8 @@ class GroupBy:
         self._watcher.append(w)
         return w
 
-    def get_dependencies(self) -> Set[str]:
-        deps = set()  # type: Set[str]
-        for w in self._watcher:
-            deps.update(w.config.dependencies)
-        return deps
-
     def queue_all(self, builder: 'Builder') -> None:
         ''' Iterate full site-tree and queue all children. '''
-        self.dependencies = self.get_dependencies()
         # remove disabled watchers
         self._watcher = [w for w in self._watcher if w.config.enabled]
         if not self._watcher:
@@ -61,31 +55,58 @@ class GroupBy:
             if isinstance(record, Record):
                 for w in self._watcher:
                     if w.should_process(record):
-                        w.process(record)
+                        w.remember(record)
 
-    def make_once(self, builder: 'Builder') -> None:
-        ''' Perform groupby, iter over sources with watcher callback. '''
-        self.didBuild = True
-        if self._watcher:
+    def make_once(self, filter_keys: Optional[Iterable[str]] = None) -> None:
+        '''
+        Perform groupby, iter over sources with watcher callback.
+        If `filter_keys` is set, ignore all other watchers.
+        '''
+        if not self._watcher:
+            return
+        # not really necessary but should improve performance of later reset()
+        if not filter_keys:
             self.resolver.reset()
-            for w in self._watcher:
-                root = builder.pad.get(w.config.root)
-                for vobj in w.iter_sources(root):
-                    # add original source
-                    self._results.append(vobj)
-                    self.resolver.add(vobj)
-                    # and also add pagination sources
-                    for sub_vobj in vobj.__iter_pagination_sources__():
-                        self._results.append(sub_vobj)
-                        self.resolver.add(sub_vobj)
-            self._watcher.clear()
+        remaining = []
+        for w in self._watcher:
+            # only process vobjs that are used somewhere
+            if filter_keys and w.config.key not in filter_keys:
+                remaining.append(w)
+                continue
+            self.resolver.reset(w.config.key)
+            # these are used in the current context (or on `build_all`)
+            for vobj in w.iter_sources():
+                # add original source
+                self._results.append(vobj)
+                self.resolver.add(vobj)
+                # and also add pagination sources
+                for sub_vobj in vobj.__iter_pagination_sources__():
+                    self._results.append(sub_vobj)
+                    self.resolver.add(sub_vobj)
+        # TODO: if this should ever run concurrently, pop() from watchers
+        self._watcher = remaining
 
-    def build_all(self, builder: 'Builder') -> None:
-        ''' Create virtual objects and build sources. '''
-        self.make_once(builder)  # in case no page used the |vgroups filter
-        path_cache = PathCache(builder.env)
-        for vobj in self._results:
-            if vobj.slug:
-                builder.build(vobj, path_cache)
-        del path_cache
-        self._results.clear()  # garbage collect weak refs
+    def build_all(
+        self,
+        builder: 'Builder',
+        specific: Optional['GroupBySource'] = None
+    ) -> None:
+        '''
+        Build actual artifacts (if needed).
+        If `specific` is set, only build the artifacts for that single vobj
+        '''
+        if not self._watcher and not self._results:
+            return
+        with reporter.build('groupby', builder):  # type:ignore
+            # in case no page used the |vgroups filter
+            self.make_once([specific.config.key] if specific else None)
+            self._building = True
+            path_cache = PathCache(builder.env)
+            for vobj in self._results:
+                if specific and vobj.path != specific.path:
+                    continue
+                if vobj.slug:
+                    builder.build(vobj, path_cache)
+            del path_cache
+            self._building = False
+            self._results.clear()  # garbage collect weak refs

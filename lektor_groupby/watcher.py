@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Dict, List, Tuple, Any, Union, NamedTuple
+from typing import TYPE_CHECKING, Dict, List, Any, Union, NamedTuple
 from typing import Optional, Callable, Iterator, Generator
 from .backref import VGroups
 from .model import ModelReader
@@ -16,8 +16,8 @@ class GroupByCallbackArgs(NamedTuple):
 
 
 GroupingCallback = Callable[[GroupByCallbackArgs], Union[
-    Iterator[Union[str, Tuple[str, Any]]],
-    Generator[Union[str, Tuple[str, Any]], Optional[str], None],
+    Iterator[Any],
+    Generator[Optional[str], Any, None],
 ]]
 
 
@@ -49,7 +49,8 @@ class Watcher:
         assert callable(self.callback), 'No grouping callback provided.'
         self._model_reader = ModelReader(pad.db, self.config.key, self.flatten)
         self._root_record = {}  # type: Dict[str, Record]
-        self._state = {}  # type: Dict[str, Dict[str, GroupBySource]]
+        self._state = {}  # type: Dict[str, Dict[Optional[str], GroupBySource]]
+        self._rmmbr = []  # type: List[Record]
         for alt in pad.config.iter_alternatives():
             self._root_record[alt] = pad.get(self._root, alt=alt)
             self._state[alt] = {}
@@ -64,13 +65,15 @@ class Watcher:
         Each record is guaranteed to be processed only once.
         '''
         for key, field in self._model_reader.read(record):
-            _gen = self.callback(GroupByCallbackArgs(record, key, field))
+            args = GroupByCallbackArgs(record, key, field)
+            _gen = self.callback(args)
             try:
                 group = next(_gen)
                 while True:
-                    if not isinstance(group, str):
-                        raise TypeError(f'Unsupported groupby yield: {group}')
-                    slug = self._persist(record, key, group)
+                    if self.config.key_map_fn:
+                        slug = self._persist_multiple(args, group)
+                    else:
+                        slug = self._persist(args, group)
                     # return slugified group key and continue iteration
                     if isinstance(_gen, Generator) and not _gen.gi_yieldfrom:
                         group = _gen.send(slug)
@@ -79,24 +82,57 @@ class Watcher:
             except StopIteration:
                 del _gen
 
-    def _persist(self, record: 'Record', key: 'FieldKeyPath', group: str) \
-            -> str:
+    def _persist_multiple(self, args: 'GroupByCallbackArgs', obj: Any) \
+            -> Optional[str]:
+        # if custom key mapping function defined, use that first
+        res = self.config.eval_key_map_fn(on=args.record,
+                                          context={'X': obj, 'SRC': args})
+        if isinstance(res, (list, tuple)):
+            for k in res:
+                self._persist(args, k)  # 1-to-n replacement
+            return None
+        return self._persist(args, res)  # normal & null replacement
+
+    def _persist(self, args: 'GroupByCallbackArgs', obj: Any) \
+            -> Optional[str]:
         ''' Update internal state. Return slugified string. '''
-        alt = record.alt
-        slug = self.config.slugify(group)
+        if not isinstance(obj, (str, bool, int, float)) and obj is not None:
+            raise ValueError(
+                'Unsupported groupby yield type for [{}]:'
+                ' {} (expected str, got {})'.format(
+                    self.config.key, obj, type(obj).__name__))
+
+        if obj is None:
+            # if obj is not set, test if config.replace_none_key is set
+            slug = self.config.replace_none_key
+            obj = slug
+        else:
+            # if obj is set, apply config.key_map  (convert int -> str)
+            slug = self.config.slugify(str(obj)) or None
+        # if neither custom mapping succeeded, do not process further
+        if not slug or obj is None:
+            return slug
+        # update internal object storage
+        alt = args.record.alt
         if slug not in self._state[alt]:
             src = GroupBySource(self._root_record[alt], slug)
             self._state[alt][slug] = src
         else:
             src = self._state[alt][slug]
 
-        src.append_child(record, group)
+        src.append_child(args.record, obj)  # obj is used as "group" string
         # reverse reference
-        VGroups.of(record).add(key, src)
+        VGroups.of(args.record).add(args.key, src)
         return slug
 
-    def iter_sources(self, root: 'Record') -> Iterator[GroupBySource]:
+    def remember(self, record: 'Record') -> None:
+        self._rmmbr.append(record)
+
+    def iter_sources(self) -> Iterator[GroupBySource]:
         ''' Prepare and yield GroupBySource elements. '''
+        for x in self._rmmbr:
+            self.process(x)
+        del self._rmmbr
         for vobj_list in self._state.values():
             for vobj in vobj_list.values():
                 yield vobj.finalize(self.config)

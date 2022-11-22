@@ -7,7 +7,7 @@ from .pruner import prune
 from .resolver import Resolver
 from .vobj import VPATH, GroupBySource, GroupByBuildProgram
 if TYPE_CHECKING:
-    from lektor.builder import Builder, BuildState
+    from lektor.builder import Builder
     from lektor.sourceobj import SourceObject
     from .watcher import GroupByCallbackArgs
 
@@ -17,7 +17,6 @@ class GroupByPlugin(Plugin):
     description = 'Cluster arbitrary records with field attribute keyword.'
 
     def on_setup_env(self, **extra: Any) -> None:
-        self.has_changes = False
         self.resolver = Resolver(self.env)
         self.env.add_build_program(GroupBySource, GroupByBuildProgram)
         self.env.jinja_env.filters.update(vgroups=VGroups.iter)
@@ -30,19 +29,13 @@ class GroupByPlugin(Plugin):
         if isinstance(source, Asset):
             return
         groupby = self._init_once(builder)
-        if groupby.isNew and isinstance(source, GroupBySource):
-            self.has_changes = True
-
-    def on_after_build(self, build_state: 'BuildState', **extra: Any) -> None:
-        if build_state.updated_artifacts:
-            self.has_changes = True
+        if not groupby.isBuilding and isinstance(source, GroupBySource):
+            # TODO: differentiate between actual build and browser preview
+            groupby.build_all(builder, source)
 
     def on_after_build_all(self, builder: 'Builder', **extra: Any) -> None:
-        # only rebuild if has changes (bypass idle builds)
-        # or the very first time after startup (url resolver & pruning)
-        if self.has_changes or not self.resolver.has_any:
-            self._init_once(builder).build_all(builder)  # updates resolver
-            self.has_changes = False
+        # by now, most likely already built. So, build_all() is a no-op
+        self._init_once(builder).build_all(builder)
 
     def on_after_prune(self, builder: 'Builder', **extra: Any) -> None:
         # TODO: find a better way to prune unreferenced elements
@@ -78,7 +71,11 @@ class GroupByPlugin(Plugin):
             @watcher.grouping()
             def _fn(args: 'GroupByCallbackArgs') -> Iterator[str]:
                 val = args.field
-                if isinstance(val, str):
+                if isinstance(val, str) and val != '':
                     val = map(str.strip, val.split(split)) if split else [val]
+                elif isinstance(val, (bool, int, float)):
+                    val = [val]
+                elif not val:  # after checking for '', False, 0, and 0.0
+                    val = [None]
                 if isinstance(val, (list, map)):
                     yield from val

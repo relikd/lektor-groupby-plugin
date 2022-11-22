@@ -53,16 +53,6 @@ class VGroups:
         order_by: Union[str, Iterable[str], None] = None,
     ) -> Iterator['GroupBySource']:
         ''' Extract all referencing groupby virtual objects from a page. '''
-        ctx = get_ctx()
-        if not ctx:
-            raise NotImplementedError("Shouldn't happen, where is my context?")
-        # get GroupBy object
-        builder = ctx.build_state.builder
-        groupby = GroupByRef.of(builder)
-        groupby.make_once(builder)  # ensure did cluster before
-        # manage config dependencies
-        for dep in groupby.dependencies:
-            ctx.record_dependency(dep)
         # prepare filter
         if isinstance(keys, str):
             keys = [keys]
@@ -70,6 +60,13 @@ class VGroups:
             fields = [fields]
         if isinstance(flows, str):
             flows = [flows]
+        # get GroupBy object
+        ctx = get_ctx()
+        if not ctx:
+            raise NotImplementedError("Shouldn't happen, where is my context?")
+        builder = ctx.build_state.builder
+        # TODO: fix record_dependency -> process in non-capturing context
+        GroupByRef.of(builder).make_once(keys)  # ensure did cluster before use
         # find groups
         proc_list = [record]
         done_list = set()  # type: Set[GroupBySource]
@@ -85,6 +82,13 @@ class VGroups:
                 if keys and vobj().config.key not in keys:
                     continue
                 done_list.add(vobj())
+
+        # manage config dependencies
+        deps = set()  # type: Set[str]
+        for vobj in done_list:
+            deps.update(vobj.config.dependencies)
+        for dep in deps:
+            ctx.record_dependency(dep)
 
         if order_by:
             if isinstance(order_by, str):

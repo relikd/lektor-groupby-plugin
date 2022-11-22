@@ -42,9 +42,13 @@ class Resolver:
     def files(self) -> Iterable[str]:
         return self._data
 
-    def reset(self) -> None:
+    def reset(self, optional_key: Optional[str] = None) -> None:
         ''' Clear previously recorded virtual objects. '''
-        self._data.clear()
+        if optional_key:
+            self._data = {k: v for k, v in self._data.items()
+                          if v.config.key != optional_key}
+        else:
+            self._data.clear()
 
     def add(self, vobj: GroupBySource) -> None:
         ''' Track new virtual object (only if slug is set). '''

@@ -1,18 +1,7 @@
-from lektor.reporter import reporter, style
 from typing import List, Dict, Optional, TypeVar
 from typing import Callable, Any, Union, Generic
 
 T = TypeVar('T')
-
-
-def report_config_error(key: str, field: str, val: str, e: Exception) -> None:
-    ''' Send error message to Lektor reporter. Indicate which field is bad. '''
-    msg = '[ERROR] invalid config for [{}.{}] = "{}",  Error: {}'.format(
-        key, field, val, repr(e))
-    try:
-        reporter._write_line(style(msg, fg='red'))
-    except Exception:
-        print(msg)  # fallback in case Lektor API changes
 
 
 def most_used_key(keys: List[T]) -> Optional[T]:
@@ -58,3 +47,16 @@ def build_url(parts: List[str]) -> str:
     if '.' not in url.rsplit('/', 1)[-1]:
         url += '/'
     return url or '/'
+
+
+class cached_property(Generic[T]):
+    ''' Calculate complex property only once. '''
+
+    def __init__(self, fn: Callable[[Any], T]) -> None:
+        self.fn = fn
+
+    def __get__(self, obj: object, typ: Union[type, None] = None) -> T:
+        if obj is None:
+            return self  # type: ignore
+        ret = obj.__dict__[self.fn.__name__] = self.fn(obj)
+        return ret

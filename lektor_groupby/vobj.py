@@ -3,14 +3,11 @@ from lektor.context import get_ctx
 from lektor.db import _CmpHelper
 from lektor.environment import Expression
 from lektor.sourceobj import VirtualSourceObject  # subclass
-from werkzeug.utils import cached_property
-
-from typing import TYPE_CHECKING, List, Any, Optional, Iterator, Iterable
+from typing import TYPE_CHECKING
+from typing import List, Any, Dict, Optional, Generator, Iterator, Iterable
 from .pagination import PaginationConfig
 from .query import FixedRecordsQuery
-from .util import (
-    report_config_error, most_used_key, insert_before_ext, build_url
-)
+from .util import most_used_key, insert_before_ext, build_url, cached_property
 if TYPE_CHECKING:
     from lektor.pagination import Pagination
     from lektor.builder import Artifact
@@ -40,59 +37,63 @@ class GroupBySource(VirtualSourceObject):
         super().__init__(record)
         self.key = slug
         self.page_num = page_num
+        self._expr_fields = {}  # type: Dict[str, Expression]
         self.__children = []  # type: List[str]
-        self.__group_map = []  # type: List[str]
+        self.__group_map = []  # type: List[Any]
 
-    def append_child(self, child: 'Record', group: str) -> None:
+    def append_child(self, child: 'Record', group: Any) -> None:
         if child not in self.__children:
             self.__children.append(child.path)
+        # TODO: rename group to value
         # __group_map is later used to find most used group
         self.__group_map.append(group)
+
+    def _update_attr(self, key: str, value: Any) -> None:
+        ''' Set or remove Jinja evaluated Expression field. '''
+        if isinstance(value, Expression):
+            self._expr_fields[key] = value
+            try:
+                delattr(self, key)
+            except AttributeError:
+                pass
+        else:
+            if key in self._expr_fields:
+                del self._expr_fields[key]
+            setattr(self, key, value)
 
     # -------------------------
     #   Evaluate Extra Fields
     # -------------------------
 
-    def finalize(self, config: 'Config', group: Optional[str] = None) \
+    def finalize(self, config: 'Config', group: Optional[Any] = None) \
             -> 'GroupBySource':
         self.config = config
         # make a sorted children query
         self._query = FixedRecordsQuery(self.pad, self.__children, self.alt)
         self._query._order_by = config.order_by
+        del self.__children
         # set group name
         self.group = group or most_used_key(self.__group_map)
-        # cleanup temporary data
-        del self.__children
         del self.__group_map
         # evaluate slug Expression
-        self.slug = None  # type: Optional[str]
-        if config.slug and '{key}' in config.slug:
-            self.slug = config.slug.replace('{key}', self.key)
-        else:
-            self.slug = self._eval(config.slug, field='slug')
-            assert self.slug != Ellipsis, 'invalid config: ' + config.slug
+        self.slug = config.eval_slug(self.key, on=self)
         if self.slug and self.slug.endswith('/index.html'):
             self.slug = self.slug[:-10]
-        # extra fields
-        for attr, expr in config.fields.items():
-            setattr(self, attr, self._eval(expr, field='fields.' + attr))
-        return self
 
-    def _eval(self, value: Any, *, field: str) -> Any:
-        ''' Internal only: evaluates Lektor config file field expression. '''
-        if not isinstance(value, str):
-            return value
-        pad = self.record.pad
-        alt = self.record.alt
-        try:
-            return Expression(pad.env, value).evaluate(pad, this=self, alt=alt)
-        except Exception as e:
-            report_config_error(self.config.key, field, value, e)
-            return Ellipsis
+        if group:  # exit early if initialized through resolver
+            return self
+        # extra fields
+        for attr in config.fields:
+            self._update_attr(attr, config.eval_field(attr, on=self))
+        return self
 
     # -----------------------
     #   Pagination handling
     # -----------------------
+
+    @property
+    def supports_pagination(self) -> bool:
+        return self.config.pagination['enabled']  # type: ignore[no-any-return]
 
     @cached_property
     def _pagination_config(self) -> 'PaginationConfig':
@@ -128,25 +129,30 @@ class GroupBySource(VirtualSourceObject):
             vpath += '/' + str(self.page_num)
         return vpath
 
-    @property
-    def url_path(self) -> str:
-        # Actual path to resource as seen by the browser
-        parts = [self.record.url_path]
+    @cached_property
+    def url_path(self) -> str:  # type: ignore[override]
+        ''' Actual path to resource as seen by the browser. '''
+        # check if slug is absolute URL
+        slug = self.slug
+        if slug and slug.startswith('/'):
+            parts = [self.pad.get_root(alt=self.alt).url_path]
+        else:
+            parts = [self.record.url_path]
         # slug can be None!!
-        if not self.slug:
+        if not slug:
             return build_url(parts)
         # if pagination enabled, append pagination.url_suffix to path
         if self.page_num and self.page_num > 1:
             sffx = self._pagination_config.url_suffix
-            if '.' in self.slug.split('/')[-1]:
+            if '.' in slug.rsplit('/', 1)[-1]:
                 # default: ../slugpage2.html (use e.g.: url_suffix = .page.)
                 parts.append(insert_before_ext(
-                    self.slug, sffx + str(self.page_num), '.'))
+                    slug, sffx + str(self.page_num), '.'))
             else:
                 # default: ../slug/page/2/index.html
-                parts += [self.slug, sffx, self.page_num]
+                parts += [slug, sffx, self.page_num]
         else:
-            parts.append(self.slug)
+            parts.append(slug)
         return build_url(parts)
 
     def iter_source_filenames(self) -> Generator[str, None, None]:
@@ -188,9 +194,23 @@ class GroupBySource(VirtualSourceObject):
             return getattr(self, key[1:])
         return self.__missing__(key)
 
+    def __getattr__(self, key: str) -> Any:
+        ''' Lazy evaluate custom user field expressions. '''
+        if key in self._expr_fields:
+            expr = self._expr_fields[key]
+            return expr.evaluate(self.pad, this=self, alt=self.alt)
+        raise AttributeError
+
     def __lt__(self, other: 'GroupBySource') -> bool:
         # Used for |sort filter ("group" is the provided original string)
-        return self.group.lower() < other.group.lower()
+        if isinstance(self.group, (bool, int, float)) and \
+                isinstance(other.group, (bool, int, float)):
+            return self.group < other.group
+        if self.group is None:
+            return False
+        if other.group is None:
+            return True
+        return str(self.group).lower() < str(other.group).lower()
 
     def __eq__(self, other: object) -> bool:
         # Used for |unique filter

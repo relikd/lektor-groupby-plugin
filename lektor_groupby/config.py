@@ -1,10 +1,31 @@
 from inifile import IniFile
-from lektor.utils import slugify
+from lektor.environment import Expression
+from lektor.context import Context
+from lektor.utils import slugify as _slugify
+from typing import TYPE_CHECKING
+from typing import Set, Dict, Optional, Union, Any, List, Generator
 from .util import split_strip
+if TYPE_CHECKING:
+    from lektor.sourceobj import SourceObject
 
-from typing import Set, Dict, Optional, Union, Any, List
 
 AnyConfig = Union['Config', IniFile, Dict]
+
+
+class ConfigError(Exception):
+    ''' Used to print a Lektor console error. '''
+
+    def __init__(
+        self, key: str, field: str, expr: str, error: Union[Exception, str]
+    ):
+        self.key = key
+        self.field = field
+        self.expr = expr
+        self.error = error
+
+    def __str__(self) -> str:
+        return 'Invalid config for [{}.{}] = "{}"  –  Error: {}'.format(
+            self.key, self.field, self.expr, repr(self.error))
 
 
 class Config:
@@ -22,11 +43,15 @@ class Config:
         root: Optional[str] = None,  # default: "/"
         slug: Optional[str] = None,  # default: "{attr}/{group}/index.html"
         template: Optional[str] = None,  # default: "groupby-{attr}.html"
+        replace_none_key: Optional[str] = None,  # default: None
+        key_map_fn: Optional[str] = None,  # default: None
     ) -> None:
         self.key = key
         self.root = (root or '/').rstrip('/') or '/'
         self.slug = slug or (key + '/{key}/')  # key = GroupBySource.key
         self.template = template or f'groupby-{self.key}.html'
+        self.replace_none_key = replace_none_key
+        self.key_map_fn = key_map_fn
         # editable after init
         self.enabled = True
         self.dependencies = set()  # type: Set[str]
@@ -37,7 +62,8 @@ class Config:
 
     def slugify(self, k: str) -> str:
         ''' key_map replace and slugify. '''
-        return slugify(self.key_map.get(k, k))  # type: ignore[no-any-return]
+        rv = self.key_map.get(k, k)
+        return _slugify(rv) or rv  # the `or` allows for example "_"
 
     def set_fields(self, fields: Optional[Dict[str, Any]]) -> None:
         '''
@@ -72,7 +98,7 @@ class Config:
 
     def __repr__(self) -> str:
         txt = '<GroupByConfig'
-        for x in ['key', 'root', 'slug', 'template', 'enabled']:
+        for x in ['enabled', 'key', 'root', 'slug', 'template', 'key_map_fn']:
             txt += ' {}="{}"'.format(x, getattr(self, x))
         txt += f' fields="{", ".join(self.fields)}"'
         if self.order_by:
@@ -87,6 +113,8 @@ class Config:
             root=cfg.get('root'),
             slug=cfg.get('slug'),
             template=cfg.get('template'),
+            replace_none_key=cfg.get('replace_none_key'),
+            key_map_fn=cfg.get('key_map_fn'),
         )
 
     @staticmethod
@@ -116,3 +144,56 @@ class Config:
             return Config.from_ini(key, config)
         elif isinstance(config, Dict):
             return Config.from_dict(key, config)
+
+    # -----------------------------------
+    #          Field Expressions
+    # -----------------------------------
+
+    def _make_expression(self, expr: Any, *, on: 'SourceObject', field: str) \
+            -> Union[Expression, Any]:
+        ''' Create Expression and report any config error. '''
+        if not isinstance(expr, str):
+            return expr
+        try:
+            return Expression(on.pad.env, expr)
+        except Exception as e:
+            raise ConfigError(self.key, field, expr, e)
+
+    def eval_field(self, attr: str, *, on: 'SourceObject') \
+            -> Union[Expression, Any]:
+        ''' Create an expression for a custom defined user field. '''
+        # do not `gather_dependencies` because fields are evaluated on the fly
+        # dependency tracking happens whenever a field is accessed
+        return self._make_expression(
+            self.fields[attr], on=on, field='fields.' + attr)
+
+    def eval_slug(self, key: str, *, on: 'SourceObject') -> Optional[str]:
+        ''' Either perform a "{key}" substitution or evaluate expression. '''
+        cfg_slug = self.slug
+        if not cfg_slug:
+            return None
+        if '{key}' in cfg_slug:
+            if key:
+                return cfg_slug.replace('{key}', key)
+            else:
+                raise ConfigError(self.key, 'slug', cfg_slug,
+                                  'Cannot replace {key} with None')
+                return None
+        else:
+            # TODO: do we need `gather_dependencies` here too?
+            expr = self._make_expression(cfg_slug, on=on, field='slug')
+            return expr.evaluate(on.pad, this=on, alt=on.alt) or None
+
+    def eval_key_map_fn(self, *, on: 'SourceObject', context: Dict) -> Any:
+        '''
+        If `key_map_fn` is set, evaluate field expression.
+        Note: The function does not check whether `key_map_fn` is set.
+        Return: A Generator result is automatically unpacked into a list.
+        '''
+        exp = self._make_expression(self.key_map_fn, on=on, field='key_map_fn')
+        with Context(pad=on.pad) as ctx:
+            with ctx.gather_dependencies(self.dependencies.add):
+                res = exp.evaluate(on.pad, this=on, alt=on.alt, values=context)
+        if isinstance(res, Generator):
+            res = list(res)  # unpack for 1-to-n replacement
+        return res
