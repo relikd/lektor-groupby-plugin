@@ -2,8 +2,9 @@ from inifile import IniFile
 from lektor.environment import Expression
 from lektor.context import Context
 from lektor.utils import slugify as _slugify
-from typing import TYPE_CHECKING
-from typing import Set, Dict, Optional, Union, Any, List, Generator
+from typing import (
+    TYPE_CHECKING, Set, Dict, Optional, Union, Any, List, Generator
+)
 from .util import split_strip
 if TYPE_CHECKING:
     from lektor.sourceobj import SourceObject
@@ -44,14 +45,14 @@ class Config:
         slug: Optional[str] = None,  # default: "{attr}/{group}/index.html"
         template: Optional[str] = None,  # default: "groupby-{attr}.html"
         replace_none_key: Optional[str] = None,  # default: None
-        key_map_fn: Optional[str] = None,  # default: None
+        key_obj_fn: Optional[str] = None,  # default: None
     ) -> None:
         self.key = key
         self.root = (root or '/').rstrip('/') or '/'
         self.slug = slug or (key + '/{key}/')  # key = GroupBySource.key
         self.template = template or f'groupby-{self.key}.html'
         self.replace_none_key = replace_none_key
-        self.key_map_fn = key_map_fn
+        self.key_obj_fn = key_obj_fn
         # editable after init
         self.enabled = True
         self.dependencies = set()  # type: Set[str]
@@ -98,7 +99,7 @@ class Config:
 
     def __repr__(self) -> str:
         txt = '<GroupByConfig'
-        for x in ['enabled', 'key', 'root', 'slug', 'template', 'key_map_fn']:
+        for x in ['enabled', 'key', 'root', 'slug', 'template', 'key_obj_fn']:
             txt += ' {}="{}"'.format(x, getattr(self, x))
         txt += f' fields="{", ".join(self.fields)}"'
         if self.order_by:
@@ -114,7 +115,7 @@ class Config:
             slug=cfg.get('slug'),
             template=cfg.get('template'),
             replace_none_key=cfg.get('replace_none_key'),
-            key_map_fn=cfg.get('key_map_fn'),
+            key_obj_fn=cfg.get('key_obj_fn'),
         )
 
     @staticmethod
@@ -184,13 +185,13 @@ class Config:
             expr = self._make_expression(cfg_slug, on=on, field='slug')
             return expr.evaluate(on.pad, this=on, alt=on.alt) or None
 
-    def eval_key_map_fn(self, *, on: 'SourceObject', context: Dict) -> Any:
+    def eval_key_obj_fn(self, *, on: 'SourceObject', context: Dict) -> Any:
         '''
-        If `key_map_fn` is set, evaluate field expression.
-        Note: The function does not check whether `key_map_fn` is set.
+        If `key_obj_fn` is set, evaluate field expression.
+        Note: The function does not check whether `key_obj_fn` is set.
         Return: A Generator result is automatically unpacked into a list.
         '''
-        exp = self._make_expression(self.key_map_fn, on=on, field='key_map_fn')
+        exp = self._make_expression(self.key_obj_fn, on=on, field='key_obj_fn')
         with Context(pad=on.pad) as ctx:
             with ctx.gather_dependencies(self.dependencies.add):
                 res = exp.evaluate(on.pad, this=on, alt=on.alt, values=context)

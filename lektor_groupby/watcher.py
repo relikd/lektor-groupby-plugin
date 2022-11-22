@@ -1,5 +1,7 @@
-from typing import TYPE_CHECKING, Dict, List, Any, Union, NamedTuple
-from typing import Optional, Callable, Iterator, Generator
+from typing import (
+    TYPE_CHECKING, Dict, List, Any, Union, NamedTuple,
+    Optional, Callable, Iterator, Generator
+)
 from .backref import VGroups
 from .model import ModelReader
 from .vobj import GroupBySource
@@ -24,7 +26,7 @@ GroupingCallback = Callable[[GroupByCallbackArgs], Union[
 class Watcher:
     '''
     Callback is called with (Record, FieldKeyPath, field-value).
-    Callback may yield one or more (group, extra-info) tuples.
+    Callback may yield 0-n objects.
     '''
 
     def __init__(self, config: 'Config') -> None:
@@ -37,7 +39,7 @@ class Watcher:
         Decorator to subscribe to attrib-elements.
         If flatten = False, dont explode FlowType.
 
-        (record, field-key, field) -> (group, extra-info)
+        (record, field-key, field) -> value
         '''
         def _decorator(fn: GroupingCallback) -> None:
             self.flatten = flatten
@@ -68,25 +70,25 @@ class Watcher:
             args = GroupByCallbackArgs(record, key, field)
             _gen = self.callback(args)
             try:
-                group = next(_gen)
+                key_obj = next(_gen)
                 while True:
-                    if self.config.key_map_fn:
-                        slug = self._persist_multiple(args, group)
+                    if self.config.key_obj_fn:
+                        slug = self._persist_multiple(args, key_obj)
                     else:
-                        slug = self._persist(args, group)
-                    # return slugified group key and continue iteration
+                        slug = self._persist(args, key_obj)
+                    # return slugified key and continue iteration
                     if isinstance(_gen, Generator) and not _gen.gi_yieldfrom:
-                        group = _gen.send(slug)
+                        key_obj = _gen.send(slug)
                     else:
-                        group = next(_gen)
+                        key_obj = next(_gen)
             except StopIteration:
                 del _gen
 
     def _persist_multiple(self, args: 'GroupByCallbackArgs', obj: Any) \
             -> Optional[str]:
         # if custom key mapping function defined, use that first
-        res = self.config.eval_key_map_fn(on=args.record,
-                                          context={'X': obj, 'SRC': args})
+        res = self.config.eval_key_obj_fn(on=args.record,
+                                          context={'X': obj, 'ARGS': args})
         if isinstance(res, (list, tuple)):
             for k in res:
                 self._persist(args, k)  # 1-to-n replacement

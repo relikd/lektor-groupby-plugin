@@ -1,5 +1,7 @@
 from lektor.db import Page  # isinstance
-from typing import TYPE_CHECKING, Dict, List, NamedTuple, Optional, Iterable
+from typing import (
+    TYPE_CHECKING, NamedTuple, Dict, List, Any, Optional, Iterable
+)
 from .util import build_url
 from .vobj import VPATH, GroupBySource
 if TYPE_CHECKING:
@@ -9,16 +11,16 @@ if TYPE_CHECKING:
 
 
 class ResolverEntry(NamedTuple):
-    slug: str
-    group: str
+    key: str
+    key_obj: Any
     config: 'Config'
     page: Optional[int]
 
     def equals(
-        self, path: str, attribute: str, group: str, page: Optional[int]
+        self, path: str, conf_key: str, vobj_key: str, page: Optional[int]
     ) -> bool:
-        return self.slug == group \
-            and self.config.key == attribute \
+        return self.key == vobj_key \
+            and self.config.key == conf_key \
             and self.config.root == path \
             and self.page == page
 
@@ -53,9 +55,9 @@ class Resolver:
     def add(self, vobj: GroupBySource) -> None:
         ''' Track new virtual object (only if slug is set). '''
         if vobj.slug:
-            # page_num = 1 overwrites page_num = None -> same url_path()
+            # `page_num = 1` overwrites `page_num = None` -> same url_path()
             self._data[vobj.url_path] = ResolverEntry(
-                vobj.key, vobj.group, vobj.config, vobj.page_num)
+                vobj.key, vobj.key_obj, vobj.config, vobj.page_num)
 
     # ------------
     #   Resolver
@@ -68,15 +70,16 @@ class Resolver:
             rv = self._data.get(build_url([node.url_path] + pieces))
             if rv:
                 return GroupBySource(
-                    node, rv.slug, rv.page).finalize(rv.config, rv.group)
+                    node, rv.key, rv.page).finalize(rv.config, rv.key_obj)
         return None
 
     def resolve_virtual_path(self, node: 'SourceObject', pieces: List[str]) \
             -> Optional[GroupBySource]:
         ''' Admin UI only: Prevent server error and null-redirect. '''
+        # format: /path/to/page@groupby/{config-key}/{vobj-key}/{page-num}
         if isinstance(node, Page) and len(pieces) >= 2:
             path = node['_path']  # type: str
-            attr, grp, *optional_page = pieces
+            conf_key, vobj_key, *optional_page = pieces
             page = None
             if optional_page:
                 try:
@@ -84,7 +87,7 @@ class Resolver:
                 except ValueError:
                     pass
             for rv in self._data.values():
-                if rv.equals(path, attr, grp, page):
+                if rv.equals(path, conf_key, vobj_key, page):
                     return GroupBySource(
-                        node, rv.slug, rv.page).finalize(rv.config, rv.group)
+                        node, rv.key, rv.page).finalize(rv.config, rv.key_obj)
         return None

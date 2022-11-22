@@ -3,8 +3,9 @@ from lektor.context import get_ctx
 from lektor.db import _CmpHelper
 from lektor.environment import Expression
 from lektor.sourceobj import VirtualSourceObject  # subclass
-from typing import TYPE_CHECKING
-from typing import List, Any, Dict, Optional, Generator, Iterator, Iterable
+from typing import (
+    TYPE_CHECKING, List, Any, Dict, Optional, Generator, Iterator, Iterable
+)
 from .pagination import PaginationConfig
 from .query import FixedRecordsQuery
 from .util import most_used_key, insert_before_ext, build_url, cached_property
@@ -25,31 +26,32 @@ class GroupBySource(VirtualSourceObject):
     '''
     Holds information for a single group/cluster.
     This object is accessible in your template file.
-    Attributes: record, key, group, slug, children, config
+    Attributes: record, key, key_obj, slug, children, config
     '''
 
     def __init__(
         self,
         record: 'Record',
-        slug: str,
+        key: str,
         page_num: Optional[int] = None
     ) -> None:
         super().__init__(record)
-        self.key = slug
-        self.page_num = page_num
-        self._expr_fields = {}  # type: Dict[str, Expression]
         self.__children = []  # type: List[str]
-        self.__group_map = []  # type: List[Any]
+        self.__key_obj_map = []  # type: List[Any]
+        self._expr_fields = {}  # type: Dict[str, Expression]
+        self.key = key
+        self.page_num = page_num
 
-    def append_child(self, child: 'Record', group: Any) -> None:
+    def append_child(self, child: 'Record', key_obj: Any) -> None:
         if child not in self.__children:
             self.__children.append(child.path)
-        # TODO: rename group to value
-        # __group_map is later used to find most used group
-        self.__group_map.append(group)
+        # __key_obj_map is later used to find most used key_obj
+        self.__key_obj_map.append(key_obj)
 
     def _update_attr(self, key: str, value: Any) -> None:
         ''' Set or remove Jinja evaluated Expression field. '''
+        # TODO: instead we could evaluate the fields only once.
+        #       But then we need to record_dependency() every successive access
         if isinstance(value, Expression):
             self._expr_fields[key] = value
             try:
@@ -65,22 +67,22 @@ class GroupBySource(VirtualSourceObject):
     #   Evaluate Extra Fields
     # -------------------------
 
-    def finalize(self, config: 'Config', group: Optional[Any] = None) \
+    def finalize(self, config: 'Config', key_obj: Optional[Any] = None) \
             -> 'GroupBySource':
         self.config = config
         # make a sorted children query
         self._query = FixedRecordsQuery(self.pad, self.__children, self.alt)
         self._query._order_by = config.order_by
         del self.__children
-        # set group name
-        self.group = group or most_used_key(self.__group_map)
-        del self.__group_map
+        # set indexed original value (can be: str, int, float, bool, obj)
+        self.key_obj = key_obj or most_used_key(self.__key_obj_map)
+        del self.__key_obj_map
         # evaluate slug Expression
         self.slug = config.eval_slug(self.key, on=self)
         if self.slug and self.slug.endswith('/index.html'):
             self.slug = self.slug[:-10]
 
-        if group:  # exit early if initialized through resolver
+        if key_obj:  # exit early if initialized through resolver
             return self
         # extra fields
         for attr in config.fields:
@@ -202,15 +204,15 @@ class GroupBySource(VirtualSourceObject):
         raise AttributeError
 
     def __lt__(self, other: 'GroupBySource') -> bool:
-        # Used for |sort filter ("group" is the provided original string)
-        if isinstance(self.group, (bool, int, float)) and \
-                isinstance(other.group, (bool, int, float)):
-            return self.group < other.group
-        if self.group is None:
-            return False
-        if other.group is None:
+        # Used for |sort filter (`key_obj` is the indexed original value)
+        if isinstance(self.key_obj, (bool, int, float)) and \
+                isinstance(other.key_obj, (bool, int, float)):
+            return self.key_obj < other.key_obj
+        if self.key_obj is None:
+            return False  # this will sort None at the end
+        if other.key_obj is None:
             return True
-        return str(self.group).lower() < str(other.group).lower()
+        return str(self.key_obj).lower() < str(other.key_obj).lower()
 
     def __eq__(self, other: object) -> bool:
         # Used for |unique filter
