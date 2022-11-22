@@ -1,6 +1,8 @@
 from lektor.reporter import reporter, style
+from typing import List, Dict, Optional, TypeVar
+from typing import Callable, Any, Union, Generic
 
-from typing import List, Dict
+T = TypeVar('T')
 
 
 def report_config_error(key: str, field: str, val: str, e: Exception) -> None:
@@ -13,13 +15,13 @@ def report_config_error(key: str, field: str, val: str, e: Exception) -> None:
         print(msg)  # fallback in case Lektor API changes
 
 
-def most_used_key(keys: List[str]) -> str:
+def most_used_key(keys: List[T]) -> Optional[T]:
     ''' Find string with most occurrences. '''
     if len(keys) < 3:
-        return keys[0] if keys else ''  # TODO: first vs last occurrence
+        return keys[0] if keys else None  # TODO: first vs last occurrence
     best_count = 0
-    best_key = ''
-    tmp = {}  # type: Dict[str, int]
+    best_key = None
+    tmp = {}  # type: Dict[T, int]
     for k in keys:
         num = (tmp[k] + 1) if k in tmp else 1
         tmp[k] = num
@@ -53,6 +55,6 @@ def build_url(parts: List[str]) -> str:
         txt = str(comp).strip('/')
         if txt:
             url += '/' + txt
-    if '.' not in url.split('/')[-1]:
+    if '.' not in url.rsplit('/', 1)[-1]:
         url += '/'
     return url or '/'

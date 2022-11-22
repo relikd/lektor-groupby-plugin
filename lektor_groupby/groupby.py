@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING, Set, List
 from .config import Config
 from .watcher import Watcher
 if TYPE_CHECKING:
-    from .config import AnyConfig
     from lektor.builder import Builder
     from lektor.sourceobj import SourceObject
+    from .config import AnyConfig
     from .resolver import Resolver
     from .vobj import GroupBySource
 
@@ -55,9 +55,9 @@ class GroupBy:
         while queue:
             record = queue.pop()
             if hasattr(record, 'attachments'):
-                queue.extend(record.attachments)  # type: ignore[attr-defined]
+                queue.extend(record.attachments)
             if hasattr(record, 'children'):
-                queue.extend(record.children)  # type: ignore[attr-defined]
+                queue.extend(record.children)
             if isinstance(record, Record):
                 for w in self._watcher:
                     if w.should_process(record):

@@ -1,6 +1,6 @@
 from setuptools import setup
 
-with open('README.md') as fp:
+with open('README.md', encoding='utf8') as fp:
     longdesc = fp.read()
 
 setup(

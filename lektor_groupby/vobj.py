@@ -121,7 +121,7 @@ class GroupBySource(VirtualSourceObject):
     # ---------------------
 
     @property
-    def path(self) -> str:
+    def path(self) -> str:  # type: ignore[override]
         # Used in VirtualSourceInfo, used to prune VirtualObjects
         vpath = f'{self.record.path}{VPATH}/{self.config.key}/{self.key}'
         if self.page_num:
@@ -149,7 +149,7 @@ class GroupBySource(VirtualSourceObject):
             parts.append(self.slug)
         return build_url(parts)
 
-    def iter_source_filenames(self) -> Iterator[str]:
+    def iter_source_filenames(self) -> Generator[str, None, None]:
         ''' Enumerate all dependencies '''
         if self.config.dependencies:
             yield from self.config.dependencies
@@ -186,7 +186,7 @@ class GroupBySource(VirtualSourceObject):
         # Used for virtual path resolver
         if key in ('_path', '_alt'):
             return getattr(self, key[1:])
-        return self.__missing__(key)  # type: ignore[attr-defined]
+        return self.__missing__(key)
 
     def __lt__(self, other: 'GroupBySource') -> bool:
         # Used for |sort filter ("group" is the provided original string)

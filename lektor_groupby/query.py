@@ -1,8 +1,7 @@
 # adapting https://github.com/dairiki/lektorlib/blob/master/lektorlib/query.py
 from lektor.constants import PRIMARY_ALT
 from lektor.db import Query  # subclass
-
-from typing import TYPE_CHECKING, List, Optional, Iterator, Iterable
+from typing import TYPE_CHECKING, List, Optional, Generator, Iterable
 if TYPE_CHECKING:
     from lektor.db import Record, Pad
 
@@ -26,7 +25,7 @@ class FixedRecordsQuery(Query):
         return self.pad.get(  # type: ignore[no-any-return]
             path, alt=self.alt, page_num=page_num, persist=persist)
 
-    def _iterate(self) -> Iterator['Record']:
+    def _iterate(self) -> Generator['Record', None, None]:
         ''' Iterate over internal set of Record elements. '''
         # ignore self record dependency from super()
         for path in self.__child_paths:
@@ -51,7 +50,7 @@ class FixedRecordsQuery(Query):
     def get_order_by(self) -> Optional[List[str]]:
         ''' Return list of attribute strings for sort order. '''
         # ignore datamodel ordering from super()
-        return self._order_by
+        return self._order_by  # type: ignore[no-any-return]
 
     def count(self) -> int:
         ''' Count matched objects. '''
@@ -69,4 +68,8 @@ class FixedRecordsQuery(Query):
     def __bool__(self) -> bool:
         if self._pristine:
             return len(self.__child_paths) > 0
-        return super().__bool__()  # type: ignore[no-any-return]
+        return super().__bool__()
+
+    if TYPE_CHECKING:
+        def request_page(self, page_num: Optional[int]) -> 'FixedRecordsQuery':
+            ...

@@ -1,4 +1,4 @@
-from lektor.db import Record  # isinstance
+from lektor.db import Page  # isinstance
 from typing import TYPE_CHECKING, Dict, List, NamedTuple, Optional, Iterable
 from .util import build_url
 from .vobj import VPATH, GroupBySource
@@ -60,7 +60,7 @@ class Resolver:
     def resolve_server_path(self, node: 'SourceObject', pieces: List[str]) \
             -> Optional[GroupBySource]:
         ''' Local server only: resolve /tag/rss/ -> /tag/rss/index.html '''
-        if isinstance(node, Record):
+        if isinstance(node, Page):
             rv = self._data.get(build_url([node.url_path] + pieces))
             if rv:
                 return GroupBySource(
@@ -70,7 +70,7 @@ class Resolver:
     def resolve_virtual_path(self, node: 'SourceObject', pieces: List[str]) \
             -> Optional[GroupBySource]:
         ''' Admin UI only: Prevent server error and null-redirect. '''
-        if isinstance(node, Record) and len(pieces) >= 2:
+        if isinstance(node, Page) and len(pieces) >= 2:
             path = node['_path']  # type: str
             attr, grp, *optional_page = pieces
             page = None

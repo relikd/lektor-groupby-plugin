@@ -1,4 +1,4 @@
-from lektor.assets import File, Directory  # isinstance
+from lektor.assets import Asset  # isinstance
 from lektor.pluginsystem import Plugin  # subclass
 from typing import TYPE_CHECKING, Iterator, Any
 from .backref import GroupByRef, VGroups
@@ -27,7 +27,7 @@ class GroupByPlugin(Plugin):
     ) -> None:
         # before-build may be called before before-build-all (issue #1017)
         # make sure it is always evaluated first
-        if isinstance(source, (File, Directory)):
+        if isinstance(source, Asset):
             return
         groupby = self._init_once(builder)
         if groupby.isNew and isinstance(source, GroupBySource):

@@ -56,7 +56,7 @@ class Watcher:
 
     def should_process(self, node: 'Record') -> bool:
         ''' Check if record path is being watched. '''
-        return node['_path'].startswith(self._root)
+        return str(node['_path']).startswith(self._root)
 
     def process(self, record: 'Record') -> None:
         '''
@@ -106,5 +106,5 @@ class Watcher:
         del self._state
 
     def __repr__(self) -> str:
-        return '<GroupByWatcher key="{}" enabled={} callback={}>'.format(
-            self.config.key, self.config.enabled, self.callback)
+        return '<GroupByWatcher key="{}" enabled={}>'.format(
+            self.config.key, self.config.enabled)

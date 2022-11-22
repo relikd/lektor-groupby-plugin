@@ -37,7 +37,7 @@ def prune(builder: 'Builder', vpath: str, url_cache: Iterable[str]) -> None:
                 for artifact_name, _ in infos:
                     if vpath not in artifact_name:
                         continue  # we only care about our Virtuals
-                    reporter.report_pruned_artifact(url)
+                    reporter.report_pruned_artifact(url)  # type: ignore
                     prune_file_and_folder(file.filename, dest_path)
                     build_state.remove_artifact(url)
                     break  # there is only one VPATH-entry per source

@@ -1,5 +1,5 @@
 from lektor.context import get_ctx
-from typing import TYPE_CHECKING, Union, Iterable, Iterator, Optional
+from typing import TYPE_CHECKING, Set, Union, Iterable, Iterator
 import weakref
 from .util import split_strip
 if TYPE_CHECKING:
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 class WeakVGroupsList(list):
     def add(self, strong: 'FieldKeyPath', weak: 'GroupBySource') -> None:
         super().append((strong, weakref.ref(weak)))
+        # super().append((strong, weak))  # strong-ref
 
 
 class GroupByRef:
@@ -71,11 +72,11 @@ class VGroups:
             flows = [flows]
         # find groups
         proc_list = [record]
-        done_list = set()
+        done_list = set()  # type: Set[GroupBySource]
         while proc_list:
             page = proc_list.pop(0)
             if recursive and hasattr(page, 'children'):
-                proc_list.extend(page.children)  # type: ignore[attr-defined]
+                proc_list.extend(page.children)
             for key, vobj in VGroups.of(page):
                 if fields and key.fieldKey not in fields:
                     continue
@@ -87,11 +88,11 @@ class VGroups:
 
         if order_by:
             if isinstance(order_by, str):
-                order = split_strip(order_by, ',')
+                order = split_strip(order_by, ',')  # type: Iterable[str]
             elif isinstance(order_by, (list, tuple)):
                 order = order_by
             else:
-                raise TypeError('order_by must be either str or list type.')
+                raise AttributeError('order_by must be str or list type.')
             # using get_sort_key() of GroupBySource
             yield from sorted(done_list, key=lambda x: x.get_sort_key(order))
         else:
