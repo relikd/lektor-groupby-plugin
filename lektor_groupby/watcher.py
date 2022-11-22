@@ -17,7 +17,7 @@ class GroupByCallbackArgs(NamedTuple):
 
 GroupingCallback = Callable[[GroupByCallbackArgs], Union[
     Iterator[Any],
-    Generator[Optional[str], Any, None],
+    Generator[Any, Optional[str], None],
 ]]
 
 
