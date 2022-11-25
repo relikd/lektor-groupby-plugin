@@ -58,6 +58,11 @@ class FixedRecordsQuery(Query):
             return len(self.__child_paths)
         return super().count()  # type: ignore[no-any-return]
 
+    @property
+    def total(self) -> int:
+        ''' Return total entries count (without any filter). '''
+        return len(self.__child_paths)
+
     def get(self, path: str, page_num: Optional[int] = None) \
             -> Optional['Record']:
         ''' Return Record with given path '''

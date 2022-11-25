@@ -65,7 +65,6 @@ class VGroups:
         if not ctx:
             raise NotImplementedError("Shouldn't happen, where is my context?")
         builder = ctx.build_state.builder
-        # TODO: fix record_dependency -> process in non-capturing context
         GroupByRef.of(builder).make_once(keys)  # ensure did cluster before use
         # find groups
         proc_list = [record]

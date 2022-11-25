@@ -100,7 +100,8 @@ class GroupBySource(VirtualSourceObject):
     @cached_property
     def _pagination_config(self) -> 'PaginationConfig':
         # Generate `PaginationConfig` once we need it
-        return PaginationConfig(self.record.pad.env, **self.config.pagination)
+        return PaginationConfig(self.record.pad.env, self.config.pagination,
+                                self._query.total)
 
     @cached_property
     def pagination(self) -> 'Pagination':
@@ -185,10 +186,10 @@ class GroupBySource(VirtualSourceObject):
     #   Properties & Helper
     # -----------------------
 
-    @cached_property
+    @property
     def children(self) -> FixedRecordsQuery:
         ''' Return query of children of type Record. '''
-        return self._query.request_page(self.page_num)
+        return self._query
 
     def __getitem__(self, key: str) -> Any:
         # Used for virtual path resolver
