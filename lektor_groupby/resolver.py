@@ -1,6 +1,6 @@
 from lektor.db import Page  # isinstance
 from typing import (
-    TYPE_CHECKING, NamedTuple, Dict, List, Any, Optional, Iterable
+    TYPE_CHECKING, NamedTuple, Dict, List, Set, Any, Optional, Iterable
 )
 from .util import build_url
 from .vobj import VPATH, GroupBySource
@@ -32,23 +32,23 @@ class Resolver:
     '''
 
     def __init__(self, env: 'Environment') -> None:
-        self._data = {}  # type: Dict[str, ResolverEntry]
+        self._data = {}  # type: Dict[str, Dict[str, ResolverEntry]]
         env.urlresolver(self.resolve_server_path)
         env.virtualpathresolver(VPATH.lstrip('@'))(self.resolve_virtual_path)
 
     @property
     def has_any(self) -> bool:
-        return bool(self._data)
+        return any(bool(x) for x in self._data.values())
 
     @property
-    def files(self) -> Iterable[str]:
-        return self._data
+    def files(self) -> Set[str]:
+        return set(y for x in self._data.values() for y in x.keys())
 
-    def reset(self, optional_key: Optional[str] = None) -> None:
+    def reset(self, key: Optional[str] = None) -> None:
         ''' Clear previously recorded virtual objects. '''
-        if optional_key:
-            self._data = {k: v for k, v in self._data.items()
-                          if v.config.key != optional_key}
+        if key:
+            if key in self._data:  # only delete if exists
+                del self._data[key]
         else:
             self._data.clear()
 
@@ -56,7 +56,9 @@ class Resolver:
         ''' Track new virtual object (only if slug is set). '''
         if vobj.slug:
             # `page_num = 1` overwrites `page_num = None` -> same url_path()
-            self._data[vobj.url_path] = ResolverEntry(
+            if vobj.config.key not in self._data:
+                self._data[vobj.config.key] = {}
+            self._data[vobj.config.key][vobj.url_path] = ResolverEntry(
                 vobj.key, vobj.key_obj, vobj.config, vobj.page_num)
 
     # ------------
@@ -67,10 +69,12 @@ class Resolver:
             -> Optional[GroupBySource]:
         ''' Local server only: resolve /tag/rss/ -> /tag/rss/index.html '''
         if isinstance(node, Page):
-            rv = self._data.get(build_url([node.url_path] + pieces))
-            if rv:
-                return GroupBySource(
-                    node, rv.key, rv.page).finalize(rv.config, rv.key_obj)
+            url = build_url([node.url_path] + pieces)
+            for subset in self._data.values():
+                rv = subset.get(url)
+                if rv:
+                    return GroupBySource(
+                        node, rv.key, rv.page).finalize(rv.config, rv.key_obj)
         return None
 
     def resolve_virtual_path(self, node: 'SourceObject', pieces: List[str]) \
@@ -86,7 +90,7 @@ class Resolver:
                     page = int(optional_page[0])
                 except ValueError:
                     pass
-            for rv in self._data.values():
+            for rv in self._data.get(conf_key, {}).values():
                 if rv.equals(path, conf_key, vobj_key, page):
                     return GroupBySource(
                         node, rv.key, rv.page).finalize(rv.config, rv.key_obj)
