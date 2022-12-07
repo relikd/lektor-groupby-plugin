@@ -86,6 +86,7 @@ class VGroups:
         deps = set()  # type: Set[str]
         for vobj in done_list:
             deps.update(vobj.config.dependencies)
+            # ctx.record_virtual_dependency(vobj) # TODO: needed? works without
         for dep in deps:
             ctx.record_dependency(dep)
 

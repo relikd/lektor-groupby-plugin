@@ -7,6 +7,7 @@ from typing import (
     TYPE_CHECKING, List, Any, Dict, Optional, Generator, Iterator, Iterable
 )
 from .pagination import PaginationConfig
+from .pruner import VirtualPruner
 from .query import FixedRecordsQuery
 from .util import most_used_key, insert_before_ext, build_url, cached_property
 if TYPE_CHECKING:
@@ -250,7 +251,7 @@ class GroupByBuildProgram(BuildProgram):
             self.source.iter_source_filenames()))
 
     def build_artifact(self, artifact: 'Artifact') -> None:
-        get_ctx().record_virtual_dependency(self.source)
+        get_ctx().record_virtual_dependency(VirtualPruner())
         artifact.render_template_into(
             self.source.config.template, this=self.source)
 

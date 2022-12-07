@@ -5,7 +5,7 @@ from .backref import GroupByRef, VGroups
 from .groupby import GroupBy
 from .pruner import prune
 from .resolver import Resolver
-from .vobj import VPATH, GroupBySource, GroupByBuildProgram
+from .vobj import GroupBySource, GroupByBuildProgram
 if TYPE_CHECKING:
     from lektor.builder import Builder
     from lektor.sourceobj import SourceObject
@@ -39,7 +39,7 @@ class GroupByPlugin(Plugin):
 
     def on_after_prune(self, builder: 'Builder', **extra: Any) -> None:
         # TODO: find a better way to prune unreferenced elements
-        prune(builder, VPATH, self.resolver.files)
+        prune(builder, self.resolver.files)
 
     # ------------
     #   internal
