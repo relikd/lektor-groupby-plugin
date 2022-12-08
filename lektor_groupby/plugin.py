@@ -1,13 +1,14 @@
 from lektor.assets import Asset  # isinstance
+from lektor.db import Record  # isinstance
 from lektor.pluginsystem import Plugin  # subclass
-from typing import TYPE_CHECKING, Iterator, Any
+from typing import TYPE_CHECKING, Set, Iterator, Any
 from .backref import GroupByRef, VGroups
 from .groupby import GroupBy
 from .pruner import prune
 from .resolver import Resolver
 from .vobj import GroupBySource, GroupByBuildProgram
 if TYPE_CHECKING:
-    from lektor.builder import Builder
+    from lektor.builder import Builder, BuildState
     from lektor.sourceobj import SourceObject
     from .watcher import GroupByCallbackArgs
 
@@ -20,22 +21,42 @@ class GroupByPlugin(Plugin):
         self.resolver = Resolver(self.env)
         self.env.add_build_program(GroupBySource, GroupByBuildProgram)
         self.env.jinja_env.filters.update(vgroups=VGroups.iter)
+        # kep track of already rebuilt GroupBySource artifacts
+        self._is_build_all = False
+        self._has_been_built = set()  # type: Set[str]
+
+    def on_before_build_all(self, **extra: Any) -> None:
+        self._is_build_all = True
 
     def on_before_build(
         self, builder: 'Builder', source: 'SourceObject', **extra: Any
     ) -> None:
         # before-build may be called before before-build-all (issue #1017)
-        # make sure it is always evaluated first
         if isinstance(source, Asset):
             return
+        # make GroupBySource available before building any Record artifact
         groupby = self._init_once(builder)
-        if not groupby.isBuilding and isinstance(source, GroupBySource):
-            # TODO: differentiate between actual build and browser preview
-            groupby.build_all(builder, source)
+        # special handling for self-building of GroupBySource artifacts
+        if isinstance(source, GroupBySource):
+            if groupby.isBuilding:  # build is during groupby.build_all()
+                self._has_been_built.add(source.path)
+            elif source.path not in self._has_been_built:
+                groupby.build_all(builder, source)  # needs rebuilding
+
+    def on_after_build(
+        self, source: 'SourceObject', build_state: 'BuildState', **extra: Any
+    ) -> None:
+        # a normal page update. We may need to re-build our GroupBySource
+        if not self._is_build_all and isinstance(source, Record):
+            if build_state.updated_artifacts:
+                # TODO: instead of clear(), only remove affected GroupBySource
+                #       ideally, identify which file has triggered the re-build
+                self._has_been_built.clear()
 
     def on_after_build_all(self, builder: 'Builder', **extra: Any) -> None:
         # by now, most likely already built. So, build_all() is a no-op
         self._init_once(builder).build_all(builder)
+        self._is_build_all = False
 
     def on_after_prune(self, builder: 'Builder', **extra: Any) -> None:
         # TODO: find a better way to prune unreferenced elements
