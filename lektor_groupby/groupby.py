@@ -23,16 +23,21 @@ class GroupBy:
         self._building = False
         self._watcher = []  # type: List[Watcher]
         self._results = []  # type: List[GroupBySource]
+        self._pre_build_priority = []  # type: List[str]  # config.key
         self.resolver = resolver
 
     @property
     def isBuilding(self) -> bool:
         return self._building
 
-    def add_watcher(self, key: str, config: 'AnyConfig') -> Watcher:
+    def add_watcher(
+        self, key: str, config: 'AnyConfig', *, pre_build: bool = False
+    ) -> Watcher:
         ''' Init Config and add to watch list. '''
         w = Watcher(Config.from_any(key, config))
         self._watcher.append(w)
+        if pre_build:
+            self._pre_build_priority.append(w.config.key)
         return w
 
     def queue_all(self, builder: 'Builder') -> None:
@@ -56,6 +61,10 @@ class GroupBy:
                 for w in self._watcher:
                     if w.should_process(record):
                         w.remember(record)
+        # build sources which need building before actual lektor build
+        if self._pre_build_priority:
+            self.make_once(self._pre_build_priority)
+            self._pre_build_priority.clear()
 
     def make_once(self, filter_keys: Optional[Iterable[str]] = None) -> None:
         '''

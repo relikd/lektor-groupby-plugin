@@ -19,7 +19,7 @@ class GroupByCallbackArgs(NamedTuple):
 
 GroupingCallback = Callable[[GroupByCallbackArgs], Union[
     Iterator[Any],
-    Generator[Any, Optional[str], None],
+    Generator[Any, Optional[GroupBySource], None],
 ]]
 
 
@@ -73,19 +73,19 @@ class Watcher:
                 key_obj = next(_gen)
                 while True:
                     if self.config.key_obj_fn:
-                        slug = self._persist_multiple(args, key_obj)
+                        vobj = self._persist_multiple(args, key_obj)
                     else:
-                        slug = self._persist(args, key_obj)
-                    # return slugified key and continue iteration
+                        vobj = self._persist(args, key_obj)
+                    # return groupby virtual object and continue iteration
                     if isinstance(_gen, Generator) and not _gen.gi_yieldfrom:
-                        key_obj = _gen.send(slug)
+                        key_obj = _gen.send(vobj)
                     else:
                         key_obj = next(_gen)
             except StopIteration:
                 del _gen
 
     def _persist_multiple(self, args: 'GroupByCallbackArgs', obj: Any) \
-            -> Optional[str]:
+            -> Optional[GroupBySource]:
         # if custom key mapping function defined, use that first
         res = self.config.eval_key_obj_fn(on=args.record,
                                           context={'X': obj, 'ARGS': args})
@@ -96,8 +96,8 @@ class Watcher:
         return self._persist(args, res)  # normal & null replacement
 
     def _persist(self, args: 'GroupByCallbackArgs', obj: Any) \
-            -> Optional[str]:
-        ''' Update internal state. Return slugified string. '''
+            -> Optional[GroupBySource]:
+        ''' Update internal state. Return grouping parent. '''
         if not isinstance(obj, (str, bool, int, float)) and obj is not None:
             raise ValueError(
                 'Unsupported groupby yield type for [{}]:'
@@ -113,7 +113,7 @@ class Watcher:
             slug = self.config.slugify(str(obj)) or None
         # if neither custom mapping succeeded, do not process further
         if not slug or obj is None:
-            return slug
+            return None
         # update internal object storage
         alt = args.record.alt
         if slug not in self._state[alt]:
@@ -125,7 +125,7 @@ class Watcher:
         src.append_child(args.record, obj)
         # reverse reference
         VGroups.of(args.record).add(args.key, src)
-        return slug
+        return src
 
     def remember(self, record: 'Record') -> None:
         self._rmmbr.append(record)
