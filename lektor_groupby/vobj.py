@@ -34,6 +34,7 @@ class GroupBySource(VirtualSourceObject):
         self,
         record: 'Record',
         key: str,
+        config: 'Config',
         page_num: Optional[int] = None
     ) -> None:
         super().__init__(record)
@@ -41,6 +42,7 @@ class GroupBySource(VirtualSourceObject):
         self.__key_obj_map = []  # type: List[Any]
         self._expr_fields = {}  # type: Dict[str, Expression]
         self.key = key
+        self.config = config
         self.page_num = page_num
 
     def append_child(self, child: 'Record', key_obj: Any) -> None:
@@ -68,27 +70,30 @@ class GroupBySource(VirtualSourceObject):
     #   Evaluate Extra Fields
     # -------------------------
 
-    def finalize(self, config: 'Config', key_obj: Optional[Any] = None) \
+    def finalize(self, key_obj: Optional[Any] = None) \
             -> 'GroupBySource':
-        self.config = config
         # make a sorted children query
         self._query = FixedRecordsQuery(self.pad, self.__children, self.alt)
-        self._query._order_by = config.order_by
+        self._query._order_by = self.config.order_by
         del self.__children
         # set indexed original value (can be: str, int, float, bool, obj)
         self.key_obj = key_obj or most_used_key(self.__key_obj_map)
         del self.__key_obj_map
-        # evaluate slug Expression
-        self.slug = config.eval_slug(self.key, on=self)
-        if self.slug and self.slug.endswith('/index.html'):
-            self.slug = self.slug[:-10]
 
         if key_obj:  # exit early if initialized through resolver
             return self
         # extra fields
-        for attr in config.fields:
-            self._update_attr(attr, config.eval_field(attr, on=self))
+        for attr in self.config.fields:
+            self._update_attr(attr, self.config.eval_field(attr, on=self))
         return self
+
+    @cached_property
+    def slug(self) -> Optional[str]:
+        # evaluate slug Expression once we need it
+        slug = self.config.eval_slug(self.key, on=self)
+        if slug and slug.endswith('/index.html'):
+            slug = slug[:-10]
+        return slug
 
     # -----------------------
     #   Pagination handling

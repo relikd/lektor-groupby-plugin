@@ -117,12 +117,12 @@ class Watcher:
         # update internal object storage
         alt = args.record.alt
         if slug not in self._state[alt]:
-            src = GroupBySource(self._root_record[alt], slug)
+            src = GroupBySource(self._root_record[alt], slug, self.config)
             self._state[alt][slug] = src
         else:
             src = self._state[alt][slug]
 
-        src.append_child(args.record, obj)  # obj is used as "group" string
+        src.append_child(args.record, obj)
         # reverse reference
         VGroups.of(args.record).add(args.key, src)
         return slug
@@ -137,7 +137,7 @@ class Watcher:
         del self._rmmbr
         for vobj_list in self._state.values():
             for vobj in vobj_list.values():
-                yield vobj.finalize(self.config)
+                yield vobj.finalize()
         # cleanup. remove this code if you'd like to iter twice
         del self._model_reader
         del self._root_record

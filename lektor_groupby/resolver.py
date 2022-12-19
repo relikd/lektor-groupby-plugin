@@ -1,7 +1,5 @@
 from lektor.db import Page  # isinstance
-from typing import (
-    TYPE_CHECKING, NamedTuple, Dict, List, Set, Any, Optional, Iterable
-)
+from typing import TYPE_CHECKING, NamedTuple, Dict, List, Set, Any, Optional
 from .util import build_url
 from .vobj import VPATH, GroupBySource
 if TYPE_CHECKING:
@@ -74,7 +72,7 @@ class Resolver:
                 rv = subset.get(url)
                 if rv:
                     return GroupBySource(
-                        node, rv.key, rv.page).finalize(rv.config, rv.key_obj)
+                        node, rv.key, rv.config, rv.page).finalize(rv.key_obj)
         return None
 
     def resolve_virtual_path(self, node: 'SourceObject', pieces: List[str]) \
@@ -93,5 +91,5 @@ class Resolver:
             for rv in self._data.get(conf_key, {}).values():
                 if rv.equals(path, conf_key, vobj_key, page):
                     return GroupBySource(
-                        node, rv.key, rv.page).finalize(rv.config, rv.key_obj)
+                        node, rv.key, rv.config, rv.page).finalize(rv.key_obj)
         return None
