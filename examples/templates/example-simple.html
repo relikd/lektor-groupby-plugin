@@ -1,5 +1,7 @@
 <h2>Path: {{ this | url(absolute=True) }}</h2>
 <p>This is: {{this}}</p>
+<p>Key: {{this.key}}</p>
+<p>Object: {{this.key_obj}}</p>
 <p>Custom field date: {{this.date}}</p>
 <ul>
 {%- for child in this.children %}

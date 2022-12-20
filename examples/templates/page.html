@@ -20,7 +20,7 @@ main { margin: 3em; }
   <footer>
     {%- for k, v in [('testA','Config'),('testB','Simple'),('testC','Advanced')] %}
     <div>{{v}} Tags:
-      {%- for x in this|vgroups(k, recursive=True, order_by='group') %} 
+      {%- for x in this|vgroups(k, recursive=True, order_by='key_obj') %} 
         <a href="{{ x|url }}">({{x.key}})</a>
       {%- endfor %} 
     </div>

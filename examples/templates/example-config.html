@@ -1,7 +1,7 @@
 <h2>Path: {{ this | url(absolute=True) }}</h2>
 <p>This is: {{this}}</p>
-<p>Group: "{{this.group}}", Key: "{{this.key}}"</p>
-<p>Custom field title: {{this.title}}</p>
+<p>Object: "{{this.key_obj}}", Key: "{{this.key}}"</p>
+<p>Custom field title: "{{this.title}}"</p>
 <ul>
 {%- for child in this.children %}
 <li>Child: <a href="{{child|url}}">{{child.title}}</a> ({{child.path}})</li>

@@ -16,7 +16,7 @@ Optionally, enable a basic config:
 ```ini
 [tags]
 root = /
-slug = tag/{group}.html
+slug = tag/{key}.html
 template = tag.html
 split = ' '
 ```

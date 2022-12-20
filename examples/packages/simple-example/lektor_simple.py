@@ -11,9 +11,17 @@ class SimpleGroupByPlugin(Plugin):
             'root': '/blog',
             'slug': 'simple/{key}/index.html',
             'template': 'example-simple.html',
+            'key_obj_fn': 'X.upper() if X else "empty"',
+            'replace_none_key': 'unknown',
         })
         watcher.config.set_key_map({'Foo': 'bar'})
         watcher.config.set_fields({'date': datetime.now()})
+        watcher.config.set_order_by('-title,body')
+        watcher.config.set_pagination(
+            enabled=True,
+            per_page=1,
+            url_suffix='p',
+        )
 
         @watcher.grouping(flatten=True)
         def fn_simple(args: GroupByCallbackArgs) -> Iterator[Tuple[str, dict]]:

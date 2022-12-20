@@ -17,20 +17,24 @@ class AdvancedGroupByPlugin(Plugin):
             return
 
         # load config directly (which also tracks dependency)
-        watcher = groupby.add_watcher('testC', config)
+        watcher = groupby.add_watcher('testC', config, pre_build=True)
 
         @watcher.grouping()
         def _replace(args: GroupByCallbackArgs) -> Generator[str, str, None]:
             # args.field assumed to be Markdown
             obj = args.field.source
-            slugify_map = {}  # type Dict[str, str]
+            url_map = {}  # type Dict[str, str]
             for match in regex.finditer(obj):
                 tag = match.group(1)
-                key = yield tag
-                print('[advanced] slugify:', tag, '->', key)
-                slugify_map[tag] = key
+                vobj = yield tag
+                if not hasattr(vobj, 'custom_attr'):
+                    vobj.custom_attr = []
+                # update static custom attribute
+                vobj.custom_attr.append(tag)
+                url_map[tag] = vobj.url_path
+                print('[advanced] slugify:', tag, '->', vobj.key)
 
             def _fn(match: re.Match) -> str:
                 tag = match.group(1)
-                return f'<a href="/advanced/{slugify_map[tag]}/">{tag}</a>'
+                return f'<a href="{url_map[tag]}">{tag}</a>'
             args.field.source = regex.sub(_fn, obj)
