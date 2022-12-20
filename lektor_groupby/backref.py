@@ -1,5 +1,5 @@
 from lektor.context import get_ctx
-from typing import TYPE_CHECKING, Set, Union, Iterable, Iterator
+from typing import TYPE_CHECKING, Set, List, Union, Iterable, Iterator
 import weakref
 from .util import split_strip
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ class VGroups:
         GroupByRef.of(builder).make_once(keys)  # ensure did cluster before use
         # find groups
         proc_list = [record]
-        done_list = set()  # type: Set[GroupBySource]
+        done_list = []  # type: List[GroupBySource]
         while proc_list:
             page = proc_list.pop(0)
             if recursive and hasattr(page, 'children'):
@@ -80,7 +80,7 @@ class VGroups:
                     continue
                 if keys and vobj().config.key not in keys:
                     continue
-                done_list.add(vobj())
+                done_list.append(vobj())
 
         # manage config dependencies
         deps = set()  # type: Set[str]
