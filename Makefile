@@ -1,4 +1,5 @@
 dist: setup.py lektor_groupby/*
+	[ -z "$${VIRTUAL_ENV}" ]  # you can not do this inside a virtual environment.
 	@echo Building...
 	python3 setup.py sdist bdist_wheel
 	rm -rf ./*.egg-info/ ./build/ MANIFEST
