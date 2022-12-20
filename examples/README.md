@@ -1,13 +1,14 @@
 # Usage
 
 Overview:
-- [quick config example](#quick-config) shows how you can use the plugin config to setup a quick and easy tagging system.
+- [config example](#config-file) shows how you can use the plugin config to setup a quick and easy tagging system.
 - [simple example](#simple-example) goes into detail how to use it in your own plugin.
-- [advanced example](#advanced-example) touches on the potentials of the plugin.
+- [advanced example](#advanced-example) touches on the potentials of plugin development.
 - [Misc](#misc) shows other use-cases.
 
 After reading this tutorial, have a look at other plugins that use `lektor-groupby`:
 - [lektor-inlinetags](https://github.com/relikd/lektor-inlinetags-plugin)
+
 
 
 ## About
@@ -35,15 +36,9 @@ The attribute name is later used for grouping.
 
 
 
-## Quick config
+## Config File
 
-Relevant files:
-
-- [`configs/groupby.ini`](./configs/groupby.ini)
-- [`templates/example-config.html`](./templates/example-config.html)
-
-
-The easiest way to add tags to your site is by defining the `groupby.ini` config file.
+The easiest way to add tags to your site is by defining the [`configs/groupby.ini`](./configs/groupby.ini) file.
 
 ```ini
 [testA]
@@ -67,8 +62,11 @@ url_suffix = .page.
 title = "Tagged: " ~ this.key_obj
 
 [testA.key_map]
-Blog = News
+C# = c-sharp
 ```
+
+
+### Config: Main Section
 
 The configuration parameter are:
 
@@ -91,7 +89,7 @@ The configuration parameter are:
    These single-line fields are then expanded to lists as well.
    If you do not provide the `split` option, the whole field value will be used as tagname.
 6. The `enabled` parameter allows you to quickly disable the grouping.
-7. The `key_obj_fn` parameter (jinja2) accepts any function-like snippet or function call.
+7. The `key_obj_fn` parameter (jinja) accepts any function-like snippet or function call.
    The context provides two variables, `X` and `ARGS`.
    The former is the raw value of the grouping, this may be a text field, markdown, or whatever custom type you have provided.
    The latter is a named tuple with `record`, `key`, and `field` values (see [simple example](#simple-example)).
@@ -101,12 +99,21 @@ The configuration parameter are:
 You can have multiple listeners, e.g., one for `/blog/` and another for `/projects/`.
 Just create as many custom attributes as you like, each having its own section (and subsections).
 
+
+### Config Subsection: .children
+
 The `.children` subsection currently has a single config field: `order_by`.
 The usual [order-by](https://www.getlektor.com/docs/guides/page-order/) rules apply (comma separated list of keys with `-` for reversed order).
 The order-by key can be anything of the page attributes of the children.
 
-The `.pagination` subsection accepts the same configuration options as the Lektor pagination [model](https://www.getlektor.com/docs/models/children/#pagination) and [guide](https://www.getlektor.com/docs/guides/pagination/).
+
+### Config Subsection: .pagination
+
+The `.pagination` subsection accepts the same configuration options as the default Lektor pagination ([model](https://www.getlektor.com/docs/models/children/#pagination), [guide](https://www.getlektor.com/docs/guides/pagination/)).
 Plus, an additional `url_suffix` parameter if you would like to customize the URL scheme.
+
+
+### Config Subsection: .fields
 
 The `.fields` subsection is a list of key-value pairs which will be added as attributes to your grouping.
 You can access them in your template (e.g., `{{this.title}}`).
@@ -121,11 +128,6 @@ The built-in field attributes are:
 - `slug`: url path under parent node, e.g. "config/a-title.html" (can be `None`)
 - `children`: the elements of the grouping (a `Query` of `Record` type)
 - `config`: configuration object (see below)
-
-Without any changes, the `key` value will just be `slugify(key_obj)`.
-However, the `.key_map` subsection will replace `key_obj` with whatever replacement value is provided in the `.key_map` and then slugify.
-You could, for example, add a `C# = c-sharp` mapping, which would otherwise just be slugified to `c`.
-This is equivalent to `slugify(key_map.get(key_obj))`.
 
 The `config` attribute contains the values that created the group:
 
@@ -142,9 +144,21 @@ The `config` attribute contains the values that created the group:
 - `pagination`: raw values from `TestA.pagination`
 - `order_by`: list of key-strings from `TestA.children.order_by`
 
-In your template file you have access to the config, attributes, fields, and children (Pages):
 
-```jinja2
+### Config Subsection: .key_map
+
+Without any changes, the `key` value will just be `slugify(key_obj)`.
+However, the `.key_map` subsection will replace `key_obj` with whatever replacement value is provided in the mapping and is then slugified.
+Take the given example, `C# = c-sharp`, which would otherwise be slugified to `c`.
+This is equivalent to `slugify(key_map.get(key_obj))`.
+
+
+### Config Template
+
+In your template file ([`templates/example-config.html`](./templates/example-config.html)), you have access to the aforementioned attributes:
+
+
+```jinja
 <h2>{{ this.title }}</h2>
 <p>Key: {{ this.key }}, Attribute: {{ this.config.key }}</p>
 <ul>
@@ -215,7 +229,7 @@ field = args.record[k.fieldKey].blocks[k.flowIndex].get(k.flowKey)
 
 Again, you can use all properties in your template.
 
-```jinja2
+```jinja
 <p>Custom field date: {{this.date}}</p>
 <ul>
 {%- for child in this.children %}
@@ -300,8 +314,8 @@ template = example-advanced.html
 match = {{([^}]{1,32})}}
 ```
 
-The config file takes the same parameters as the [config example](#quick-config).
-We introduced a new config option `testC.pattern.match`.
+The config file takes the same parameters as the [config example](#config-file).
+We introduce a new config option `testC.pattern.match`.
 This regular expression matches `{{` + any string less than 32 characters + `}}`.
 Notice, the parenthesis (`()`) will match only the inner part, thus the replace function (`re.sub`) removes the `{{}}`.
 
@@ -318,7 +332,7 @@ You can combine this with the next use-case.
 
 ### Index pages & Group query + filter
 
-```jinja2
+```jinja
 {%- for x in this|vgroups(keys=['TestA', 'TestB'], fields=[], flows=[], recursive=True, order_by='key_obj') %} 
 <a href="{{ x|url }}">({{ x.key_obj }})</a>
 {%- endfor %} 
