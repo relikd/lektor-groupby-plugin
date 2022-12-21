@@ -46,7 +46,7 @@ class GroupBySource(VirtualSourceObject):
         self.page_num = page_num
 
     def append_child(self, child: 'Record', key_obj: Any) -> None:
-        if child not in self.__children:
+        if child.path not in self.__children:
             self.__children.append(child.path)
         # __key_obj_map is later used to find most used key_obj
         self.__key_obj_map.append(key_obj)

@@ -8,13 +8,14 @@ and this project does adhere to [Semantic Versioning](https://semver.org/spec/v2
 ## [Unreleased]
 
 ### Added
-- Support `unique=False` in `vgroups` filter to return a list of all entries (including duplicates)
+- `vgroups` filter now supports `unique=False` to return a list of all entries including duplicates (default: `True`)
 
 ### Fixed
-- No duplicate `GroupBySource` entries in `vgroups` filter (while keeping sort order)
+- Preserves original sort order in `vgroups` filter if `unique=True`
+- Remove duplicates from `GroupBySource` children
 
 ### Changed
-- Change default `recursive=True` for `vgroups` filter (most probable use case)
+- `vgroups` filter uses `recursive=True` by default
 
 
 
