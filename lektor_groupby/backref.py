@@ -1,5 +1,5 @@
 from lektor.context import get_ctx
-from typing import TYPE_CHECKING, Set, Dict, Union, Iterable, Iterator
+from typing import TYPE_CHECKING, Set, List, Dict, Union, Iterable, Iterator
 import weakref
 from .util import split_strip
 if TYPE_CHECKING:
@@ -50,6 +50,7 @@ class VGroups:
         fields: Union[str, Iterable[str], None] = None,
         flows: Union[str, Iterable[str], None] = None,
         recursive: bool = True,
+        unique: bool = True,
         order_by: Union[str, Iterable[str], None] = None,
     ) -> Iterator['GroupBySource']:
         ''' Extract all referencing groupby virtual objects from a page. '''
@@ -68,9 +69,12 @@ class VGroups:
         GroupByRef.of(builder).make_once(keys)  # ensure did cluster before use
         # find groups
         proc_list = [record]
+
         # Note: An ordered Set would be more approptiate but there is none.
         # So lets use the insert order of dict (guaranteed since Python 3.7)
-        done_list = {}  # type: Dict[GroupBySource, None]
+        _only_uniques = {}  # type: Dict[GroupBySource, None]
+        _w_duplicates = []  # type: List[GroupBySource]
+
         while proc_list:
             page = proc_list.pop(0)
             if recursive and hasattr(page, 'children'):
@@ -82,7 +86,12 @@ class VGroups:
                     continue
                 if keys and vobj().config.key not in keys:
                     continue
-                done_list[vobj()] = None  # we only need the keys()
+                if unique:
+                    _only_uniques[vobj()] = None  # we only need the keys()
+                else:
+                    _w_duplicates.append(vobj())
+
+        done_list = _only_uniques if unique else _w_duplicates
 
         # manage config dependencies
         deps = set()  # type: Set[str]

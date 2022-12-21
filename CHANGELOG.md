@@ -7,6 +7,9 @@ and this project does adhere to [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+- Support `unique=False` in `vgroups` filter to return a list of all entries (including duplicates)
+
 ### Fixed
 - No duplicate `GroupBySource` entries in `vgroups` filter (while keeping sort order)
 
