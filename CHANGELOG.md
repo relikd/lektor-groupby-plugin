@@ -10,6 +10,9 @@ and this project does adhere to [Semantic Versioning](https://semver.org/spec/v2
 ### Fixed
 - No duplicate `GroupBySource` entries in `vgroups` filter (while keeping sort order)
 
+### Changed
+- Change default `recursive=True` for `vgroups` filter (most probable use case)
+
 
 
 ## [0.9.9] – 2022-12-21

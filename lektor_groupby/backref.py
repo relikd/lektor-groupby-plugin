@@ -49,7 +49,7 @@ class VGroups:
         *,
         fields: Union[str, Iterable[str], None] = None,
         flows: Union[str, Iterable[str], None] = None,
-        recursive: bool = False,
+        recursive: bool = True,
         order_by: Union[str, Iterable[str], None] = None,
     ) -> Iterator['GroupBySource']:
         ''' Extract all referencing groupby virtual objects from a page. '''
