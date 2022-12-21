@@ -7,11 +7,15 @@ and this project does adhere to [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Fixed
+- No duplicate `GroupBySource` entries in `vgroups` filter (while keeping sort order)
+
+
 
 ## [0.9.9] – 2022-12-21
 
 ### Fixed
-- Keep original sorting order in `vgroups` filter if no `order_by` is set.
+- Keep original sorting order in `vgroups` filter if no `order_by` is set
 
 
 
