@@ -7,6 +7,9 @@ and this project does adhere to [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+
+## [1.0.0] – 2023-03-04
+
 ### Added
 - `vgroups` filter now supports `unique=False` to return a list of all entries including duplicates (default: `True`)
 
@@ -160,7 +163,8 @@ and this project does adhere to [Semantic Versioning](https://semver.org/spec/v2
 Initial release
 
 
-[Unreleased]: https://github.com/relikd/lektor-groupby-plugin/compare/v0.9.9...HEAD
+[Unreleased]: https://github.com/relikd/lektor-groupby-plugin/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/relikd/lektor-groupby-plugin/compare/v0.9.9...v1.0.0
 [0.9.9]: https://github.com/relikd/lektor-groupby-plugin/compare/v0.9.8...v0.9.9
 [0.9.8]: https://github.com/relikd/lektor-groupby-plugin/compare/v0.9.7...v0.9.8
 [0.9.7]: https://github.com/relikd/lektor-groupby-plugin/compare/v0.9.6...v0.9.7

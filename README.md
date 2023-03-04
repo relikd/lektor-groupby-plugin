@@ -3,7 +3,6 @@
 A generic grouping / clustering plugin.
 Can be used for tagging or similar tasks.
 The grouping algorithm is performed once.
-Contrary to, at least, cubic runtime if doing the same with Pad queries.
 
 Install this plugin or modify your Lektor project file:
 
